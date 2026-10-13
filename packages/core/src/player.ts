@@ -325,8 +325,10 @@ export class Player {
         this.stage.render()
         const spoken = voice.speak(action.say, spanMs).catch(() => {})
         if (spanMs <= 0) {
-          // Nothing to talk over: a long trailing say is heard out, a short one is left sounding.
-          if (words > timing.voice.longWords) await spoken
+          // Nothing to talk over: a long trailing say is heard out, a short one is left sounding —
+          // unless a point is up: its say is heard out too, so the view never leaves the pointed
+          // code while its last words are still sounding.
+          if (words > timing.voice.longWords || s.point) await spoken
           else await this.stage.pacing.sleep(timing.voice.leadMs)
         } else {
           // Duplex: let the voice get ahead by however much it outruns the typing it covers

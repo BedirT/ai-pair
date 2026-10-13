@@ -190,8 +190,10 @@ next `say`) and hands that span to `speak`, and the voice spreads its
 sentences across it — a touch slower or faster, with pauses between
 sentences. If the words need longer than the typing, playback waits out
 the difference first (`timing.voice.maxLeadMs` caps the wait), so talking
-and typing finish about together; a long `say` with nothing after it (over
-`timing.voice.longWords`) is heard out in full. Interruptions settle the
+and typing finish about together; a `say` with nothing after it is heard
+out in full when it is long (over `timing.voice.longWords`) or when a
+`point` highlight is up, so the view never leaves the pointed code
+mid-sentence. Interruptions settle the
 `speak` promise by stopping the voice. Rehearsals never get a voice: they
 are silent.
 

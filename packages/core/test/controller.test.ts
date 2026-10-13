@@ -105,6 +105,24 @@ describe("timing", () => {
     expect(voice.stops).toBeGreaterThan(0)
   })
 
+  it("hears even a short say out while a point is up, so the view stays on the pointed code", async () => {
+    const { editor, controller } = setup({ "a.ts": "const x = 1\n" })
+    const voice = new FakeVoice()
+    controller.setVoice(voice)
+    await controller.start()
+    await controller.read("a.ts")
+    await controller.step([{ point: { file: "a.ts", line: 1, text: "const x" } }, { say: "one two" }])
+    const after = track(controller.step([]))
+    await advance(2000)
+    // The say is short, but the batch waits for its last word: the pointed code is still up.
+    expect(after.done).toBe(false)
+    expect(editor.point).toBeDefined()
+    expect(editor.focus).toBe("point")
+    voice.finish()
+    await advance(100)
+    expect(after.done).toBe(true)
+  })
+
   it("pauses after a move, longer when the move is far", async () => {
     const lines = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join("\n")
     const { controller } = setup(
