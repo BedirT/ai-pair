@@ -1,7 +1,7 @@
 import * as nodePath from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { Action } from "@ai-pair/protocol"
-import { advance, setup, testConfig, track, until } from "./fake"
+import { advance, FakeVoice, setup, testConfig, track, until } from "./fake"
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -58,6 +58,41 @@ describe("timing", () => {
     controller.resume()
     await advance(1000)
     expect(editor.text("a.ts")).toBe("abc")
+  })
+
+  it("speaks a short say over the typing that follows it", async () => {
+    const { editor, controller } = setup({ "a.ts": "" })
+    const voice = new FakeVoice()
+    controller.setVoice(voice)
+    await controller.start()
+    await controller.step([{ move: { file: "a.ts", line: 1, to: "line_end" } }, { say: "one two" }, { type: "ab▌" }])
+    await advance(1000)
+    expect(voice.spoken).toEqual(["one two"])
+    // The words are still being said, and the typing went ahead under them.
+    expect(editor.text("a.ts")).toBe("ab")
+    voice.finish()
+  })
+
+  it("gives a long say the floor, and an interrupt cuts it off", async () => {
+    const { editor, controller } = setup({ "a.ts": "" })
+    const voice = new FakeVoice()
+    controller.setVoice(voice)
+    await controller.start()
+    await controller.step([
+      { move: { file: "a.ts", line: 1, to: "line_end" } },
+      { say: "one two three four five" },
+      { type: "ab▌" },
+    ])
+    await advance(2000)
+    expect(editor.text("a.ts")).toBe("")
+    voice.finish()
+    await advance(1000)
+    expect(editor.text("a.ts")).toBe("ab")
+
+    await controller.step([{ say: "one two three four five" }, { type: "c▌" }])
+    await advance(100)
+    controller.userInterrupt()
+    expect(voice.stops).toBeGreaterThan(0)
   })
 
   it("pauses after a move, longer when the move is far", async () => {

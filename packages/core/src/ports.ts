@@ -94,5 +94,17 @@ export interface PanelPort {
   post(event: PanelEvent): void
 }
 
+/**
+ * The agent's voice, when there is one: it speaks a `say` out loud instead of leaving it to be read.
+ * `speak` settles when the words have been spoken, or dropped, or stopped; it never rejects playback.
+ */
+export interface VoicePort {
+  /** Loaded and able to speak now. Not ready, playback falls back to the reading pause. */
+  readonly ready: boolean
+  speak(text: string): Promise<void>
+  /** Cuts off what is being said and drops what is queued: interrupted words are stale words. */
+  stop(): void
+}
+
 /** A change to a document, in the coordinates of the text before it. */
 export type Change = { offset: number; deleteLength: number; text: string }

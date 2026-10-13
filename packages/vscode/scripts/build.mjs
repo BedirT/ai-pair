@@ -23,6 +23,9 @@ const common = {
 }
 
 await esbuild.build({ ...common, entryPoints: ["src/extension.ts"], external: ["vscode"], outfile: "dist/extension.js" })
+// The voice worker runs under bun or node, as its own ES module; it loads kokoro-js from wherever
+// it was found on the machine, so nothing of it is bundled in.
+await esbuild.build({ ...common, format: "esm", entryPoints: ["src/voiceWorker.ts"], outfile: "dist/voiceWorker.js" })
 // The relay tells agents the extension's version.
 const { version } = JSON.parse(fs.readFileSync("package.json", "utf8"))
 await esbuild.build({

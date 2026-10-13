@@ -6,7 +6,7 @@ import { actionKinds, CURSOR_MARKER, ToolError } from "@ai-pair/protocol"
 import { fileDiff } from "./diff"
 import { LineIds, type Sighting } from "./lines"
 import { agentPath, displayPath, Player, type Scene } from "./player"
-import type { AgentState, Change, CursorView, EditorPort, PanelPort, Ref, SharedSelection } from "./ports"
+import type { AgentState, Change, CursorView, EditorPort, PanelPort, Ref, SharedSelection, VoicePort } from "./ports"
 import { followChange, rehearse, type Rehearsal } from "./rehearsal"
 import { fileLines } from "./text"
 import { Timeline } from "./timeline"
@@ -103,6 +103,7 @@ export class Controller {
   private nextBatchId = 1
   private pauseReasons = new Set<string>()
   private speed = 1
+  private voice: VoicePort | undefined
   private lastPosted = ""
 
   constructor(
@@ -142,6 +143,7 @@ export class Controller {
           speed: () => this.speed,
           render: () => this.render(),
           confirm: (id, command) => this.confirm(s, id, command),
+          voice: () => (this.voice?.ready ? this.voice : undefined),
           lines,
         }),
         queue: [],
@@ -391,6 +393,12 @@ export class Controller {
     this.speed = speed
   }
 
+  /** The voice that speaks each `say`, or none. Changing it cuts off anything being said. */
+  setVoice(voice: VoicePort | undefined): void {
+    if (this.voice !== voice) this.voice?.stop()
+    this.voice = voice
+  }
+
   setConfirmCommands(confirm: boolean): void {
     this.config = { ...this.config, confirmCommands: confirm }
   }
@@ -621,6 +629,7 @@ export class Controller {
   private close(s: Session): void {
     if (this.session === s) this.session = null
     s.timeline.interrupt()
+    this.voice?.stop()
     clearTimeout(s.navigatorTimer)
     this.editor.renderPoint(null)
     this.render()
@@ -640,6 +649,7 @@ export class Controller {
     for (const b of s.queue) if (b.state === "queued") this.discard(s, b)
     s.queue = s.queue.filter((b) => b.state !== "done")
     s.timeline.interrupt()
+    this.voice?.stop()
   }
 
   private update(): void {

@@ -11,6 +11,7 @@ import type {
   PanelEvent,
   PanelPort,
   RunOptions,
+  VoicePort,
 } from "../src/ports"
 
 /** `/project` in this platform's form (`C:\project` on Windows), as the controller resolves it. */
@@ -147,6 +148,26 @@ export class FakePanel implements PanelPort {
   }
 }
 
+/** A voice whose words take as long as the test says: `finish` ends whatever it is saying. */
+export class FakeVoice implements VoicePort {
+  ready = true
+  spoken: string[] = []
+  stops = 0
+  private finishers: Array<() => void> = []
+
+  speak(text: string): Promise<void> {
+    this.spoken.push(text)
+    return new Promise<void>((resolve) => this.finishers.push(resolve))
+  }
+  finish(): void {
+    for (const finish of this.finishers.splice(0)) finish()
+  }
+  stop(): void {
+    this.stops++
+    this.finish()
+  }
+}
+
 /** Deterministic timing: no jitter, round numbers, no pauses except before moves and selections. */
 export const testConfig: Config = {
   ...defaultConfig,
@@ -154,6 +175,7 @@ export const testConfig: Config = {
     type: { charMs: 100, jitter: 0.25, wordStartMs: 0, punctuationMs: 0, openBracketMs: 0, newlineMs: 0 },
     fastFactor: 0.1,
     reading: { msPerWord: 100, minMs: 500, maxMs: 2000 },
+    voice: { longWords: 3, shortMs: 10, msPerWord: 100 },
     beforeMoveMs: 100,
     afterMoveNearMs: 0,
     afterMoveFarMs: 0,

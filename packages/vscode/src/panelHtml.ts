@@ -19,6 +19,8 @@ const ICONS = {
   exit: svg('<path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h11"/>'),
   send: svg('<path d="M4 12l16-8-6 16-2.5-6.5z"/>'),
   play: svg('<path d="M8 5l11 7-11 7z"/>'),
+  speaker: svg('<path d="M11 5L6 9H3v6h3l5 4zM15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/>', "speaker-on"),
+  speakerOff: svg('<path d="M11 5L6 9H3v6h3l5 4zM16 9l6 6M22 9l-6 6"/>', "speaker-off"),
 }
 
 export function panelHtml(cspSource: string): string {
@@ -166,8 +168,21 @@ export function panelHtml(cspSource: string): string {
   #idle-summary:empty { display: none; }
   #idle-text { margin-top: 4px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 
+  #omp-bar, #voice-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  #omp-bar button, #voice-bar button { height: 26px; padding: 0 8px; }
+  #omp-status, #voice-status { font-size: 12px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  body.omp #omp-start, body:not(.omp) :is(#omp-stop, #omp-new, #omp-model, #omp-abort) { display: none; }
+  /* With the voice speaking, the band's big words go: the eyes belong on the code. */
+  body.voice #now { display: none; }
+  body:is(.active.voice) #main { min-height: 0; }
+  #voice .speaker-on { display: none; }
+  body.voice-enabled #voice .speaker-on { display: block; }
+  body.voice-enabled #voice .speaker-off { display: none; }
+  body.voice-enabled #voice { color: var(--fg); background: var(--vscode-toolbar-hoverBackground, var(--soft)); }
+  .entry.tool { font-family: var(--mono); font-size: 11.5px; color: var(--faint); }
+
   #composer { display: none; margin-top: 12px; }
-  body.active #composer { display: block; }
+  body:is(.active, .omp) #composer { display: block; }
   #compose-row {
     display: flex; align-items: flex-end; gap: 4px; padding: 3px 3px 3px 10px; border-radius: 6px;
     background: var(--vscode-sideBar-background, var(--vscode-input-background)); border: 1px solid var(--vscode-input-border, var(--border));
@@ -242,6 +257,7 @@ export function panelHtml(cspSource: string): string {
       <div id="head">
         <div id="status"><span id="dot" class="dot off"></span><span id="status-text">No session</span></div>
         <div id="controls">
+          <button id="voice" class="quiet" aria-label="Voice" data-tip="Hear the agent instead of reading it">${ICONS.speaker}${ICONS.speakerOff}</button>
           <button id="pause" class="quiet" aria-label="Pause" data-tip="Pause (Space)" aria-keyshortcuts="Space">${ICONS.pause}${ICONS.resume}</button>
           <button id="interrupt" class="quiet" aria-label="Interrupt" data-tip="Interrupt">${ICONS.stop}</button>
           <button id="turn" class="quiet" aria-label="My turn" data-tip="Take the turn: you drive, the agent navigates">${ICONS.swap}<span id="turn-label">My turn</span></button>
@@ -268,7 +284,20 @@ export function panelHtml(cspSource: string): string {
       <div id="idle">
         <div id="idle-title">No active session</div>
         <div id="idle-summary"></div>
-        <div id="idle-text">Ask your agent to pair with you, or run <a class="command" data-command="aiPair.playDemo">AI Pair: Play Demo Session</a>. First time? Run <a class="command" data-command="aiPair.setUpAgent">AI Pair: Set Up Agent</a>.</div>
+        <div id="idle-text">Talk to OMP right here, ask another agent to pair with you, or run <a class="command" data-command="aiPair.playDemo">AI Pair: Play Demo Session</a>. First time? Run <a class="command" data-command="aiPair.setUpAgent">AI Pair: Set Up Agent</a>.</div>
+        <div id="omp-bar">
+          <button id="omp-start" class="primary">${ICONS.play}<span>Start OMP</span></button>
+          <button id="omp-abort" class="soft" data-tip="Stop what OMP is doing now">${ICONS.stop}<span>Stop</span></button>
+          <button id="omp-new" class="soft" data-tip="Start a fresh OMP conversation">New chat</button>
+          <button id="omp-model" class="soft" data-tip="Choose the model OMP uses">Model</button>
+          <button id="omp-stop" class="quiet" data-tip="Turn OMP off">${ICONS.exit}</button>
+          <span id="omp-status"></span>
+        </div>
+        <div id="voice-bar">
+          <button id="voice-toggle" class="soft" data-tip="Hear the agent instead of reading it">Voice</button>
+          <button id="voice-pick" class="soft" data-tip="Choose whose voice it is">Pick a voice</button>
+          <span id="voice-status"></span>
+        </div>
       </div>
     </div>
     <div id="composer">
@@ -290,11 +319,16 @@ export function panelHtml(cspSource: string): string {
     turn: $("turn"), turnLabel: $("turn-label"), speed: $("speed"), speedMenu: $("speed-menu"), end: $("end"),
     now: $("now-text"), ref: $("now-ref"),
     idleTitle: $("idle-title"), idleSummary: $("idle-summary"), idleText: $("idle-text"),
+    ompStart: $("omp-start"), ompStop: $("omp-stop"), ompAbort: $("omp-abort"), ompNew: $("omp-new"), ompModel: $("omp-model"), ompStatus: $("omp-status"),
+    voice: $("voice"), voiceToggle: $("voice-toggle"), voicePick: $("voice-pick"), voiceStatus: $("voice-status"),
     reply: $("reply"), send: $("send"), attach: $("attach"), attachRef: $("attach-ref"), attachX: $("attach-x"),
     run: $("run"), runLabel: $("run-label"), runCmd: $("run-cmd"), runGo: $("run-go"), runAlways: $("run-always"), runSkip: $("run-skip"),
     history: $("history"), tip: $("tip"),
   };
   let active = false, turn = "agent", paused = false, replaying = false;
+  let omp = { state: "off" };   // the built-in OMP conversation, as the extension last reported it
+  let voice = { enabled: false, state: "off", voice: "af_heart" };   // the voice, as the extension last reported it
+  const ompEntries = {};   // a streaming OMP reply's history row, by its id
   let state = null;     // the agent's state, as the extension last reported it
   let selection = null, selectionDismissed = false;   // the programmer's selection, offered with the reply
   let runId = null, runConfirming = false;   // the command shown in the run box
@@ -323,7 +357,7 @@ export function panelHtml(cspSource: string): string {
     return el;
   }
 
-  function addAgent(html) { add(entry("agent", html)); }
+  function addAgent(html) { return add(entry("agent", html)); }
 
   function addDivider(text) { add(entry("divider")).textContent = text; }
 
@@ -367,7 +401,8 @@ export function panelHtml(cspSource: string): string {
     else { outcome.classList.add("fail"); outcome.textContent = "✕ exit " + exitCode; }
   }
 
-  const attaching = () => active && selection !== null && !selectionDismissed;
+  const ompOn = () => omp.state !== "off";
+  const attaching = () => (active || ompOn()) && selection !== null && !selectionDismissed;
   function syncAttach() {
     ui.attach.classList.toggle("on", attaching());
     if (attaching()) ui.attachRef.replaceChildren(refLink(selection));
@@ -381,8 +416,18 @@ export function panelHtml(cspSource: string): string {
     el.classList.add("arrive");
   }
 
+  const voiceReady = () => voice.enabled && voice.state === "ready";
+
   function setNow(text) {
     if (current !== null) addAgent(rich(current));
+    current = null;
+    // Spoken words go straight to the history: the band keeps none of them big.
+    if (voiceReady()) {
+      const el = addAgent(rich(text));
+      if (pointed) el.append(" ", pointed);
+      pointed = null;
+      return;
+    }
     current = text;
     ui.now.className = "";
     ui.now.innerHTML = rich(text);
@@ -390,6 +435,23 @@ export function panelHtml(cspSource: string): string {
     ui.ref.replaceChildren(...(pointed ? [pointed] : []));
     pointed = null;
     arrive(ui.now);
+  }
+
+  function setVoice(e) {
+    const wasReady = voiceReady();
+    voice = e;
+    document.body.classList.toggle("voice", voiceReady());
+    document.body.classList.toggle("voice-enabled", e.enabled);
+    ui.voiceToggle.textContent = e.enabled ? "Voice on" : "Voice off";
+    const words = !e.enabled ? "Words show here." : e.state === "loading" ? "Voice is loading…" : e.state === "ready" ? "Speaking. Words land in the history." : e.state === "error" ? (e.detail || "Voice failed. Words show here.") : "Voice on.";
+    ui.voiceStatus.textContent = words;
+    ui.voiceStatus.dataset.tip = words;
+    setTip(ui.voice, e.enabled ? "Voice on: click to turn it off" : "Hear the agent instead of reading it");
+    if (voiceReady() && !wasReady && current !== null) {
+      addAgent(rich(current));
+      current = null;
+    }
+    syncTip();
   }
 
   // The reading pause fills a ring around the status dot.
@@ -452,15 +514,50 @@ export function panelHtml(cspSource: string): string {
   function setActive(on) {
     active = on;
     document.body.classList.toggle("active", on);
-    ui.reply.disabled = !on;
+    ui.reply.disabled = !(on || ompOn());
     if (!on) {
       reading = null;
       runId = null; runConfirming = false; ui.run.className = "";
       closeSpeedMenu();
+      if (ompOn()) ui.reply.placeholder = "Ask OMP…";
+    } else {
+      ui.reply.placeholder = turn === "user" ? "Ask the agent…" : "Reply to the agent…";
     }
     syncStatus();
     syncAttach();
     syncTip();
+  }
+
+  function setOmp(e) {
+    omp = e;
+    document.body.classList.toggle("omp", ompOn());
+    ui.reply.disabled = !(active || ompOn());
+    if (!active) ui.reply.placeholder = ompOn() ? "Ask OMP…" : "Reply to the agent…";
+    ui.ompStart.disabled = e.state === "starting";
+    ui.ompAbort.disabled = e.state !== "busy";
+    const words = { off: "", starting: "OMP is starting…", ready: "OMP is ready", busy: "OMP is working…" }[e.state] || "";
+    ui.ompStatus.textContent = [words, e.model, e.detail].filter(Boolean).join(" · ");
+    ui.ompStatus.dataset.tip = ui.ompStatus.textContent;
+    if (!active && ompOn()) {
+      ui.idleTitle.textContent = "OMP";
+      ui.idleText.textContent = "Say what to do. For code work OMP pairs with you: it types in your editor, slow, and talks as it goes.";
+    } else if (!active && !ompOn() && ui.idleTitle.textContent === "OMP") {
+      ui.idleTitle.textContent = "No active session";
+      ui.idleText.textContent = "Talk to OMP right here, ask another agent to pair with you, or play the demo.";
+    }
+    syncAttach();
+    syncTip();
+  }
+
+  function addOmp(e) {
+    if (e.role === "note") { addDivider(e.text); return; }
+    let el = ompEntries[e.id];
+    if (!el) {
+      el = add(entry(e.role === "tool" ? "tool" : "agent"));
+      ompEntries[e.id] = el;
+    }
+    if (e.role === "tool") el.textContent = e.text;
+    else el.innerHTML = rich(e.text);
   }
 
   function handle(e) {
@@ -488,7 +585,7 @@ export function panelHtml(cspSource: string): string {
           addDivider(why);
           ui.idleTitle.textContent = e.reason === "disconnected" ? "The agent disconnected" : "Session ended";
           ui.idleSummary.innerHTML = e.summary ? rich(e.summary) : "";
-          ui.idleText.textContent = "Ask your agent to pair again.";
+          ui.idleText.textContent = ompOn() ? "OMP is still here. Say what to do next." : "Ask your agent to pair again, or start OMP here.";
           setActive(false);
         }
         return;
@@ -537,6 +634,10 @@ export function panelHtml(cspSource: string): string {
         syncAttach();
         return;
       case "focusReply": ui.reply.focus(); return;
+      case "ompState": setOmp(e); return;
+      case "voiceState": setVoice(e); return;
+      case "ompChat": addOmp(e); return;
+      case "ompDraft": ui.reply.value = e.text; syncDraft(); return;
       case "speed": {
         // One decimal, so the menu's speeds line up; a setting with more keeps them.
         const label = (Number.isInteger(e.value * 10) ? e.value.toFixed(1) : String(e.value)) + "×";
@@ -597,6 +698,14 @@ export function panelHtml(cspSource: string): string {
   ui.attachX.onclick = () => { selectionDismissed = true; syncAttach(); };
   const decide = (run, remember) => { if (runId !== null) vscode.postMessage({ type: "runDecision", id: runId, run, remember }); };
   ui.runGo.onclick = () => decide(true, false);
+  ui.ompStart.onclick = () => vscode.postMessage({ type: "ompStart" });
+  ui.ompStop.onclick = () => vscode.postMessage({ type: "ompStop" });
+  ui.ompAbort.onclick = () => vscode.postMessage({ type: "ompAbort" });
+  ui.ompNew.onclick = () => vscode.postMessage({ type: "ompNew" });
+  ui.voice.onclick = () => vscode.postMessage({ type: "voiceToggle" });
+  ui.voiceToggle.onclick = () => vscode.postMessage({ type: "voiceToggle" });
+  ui.voicePick.onclick = () => vscode.postMessage({ type: "voicePick" });
+  ui.ompModel.onclick = () => vscode.postMessage({ type: "ompModel" });
   ui.runAlways.onclick = () => decide(true, true);
   ui.runSkip.onclick = () => decide(false, false);
   ui.end.onclick = () => vscode.postMessage({ type: "end" });

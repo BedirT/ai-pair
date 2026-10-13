@@ -2,7 +2,7 @@
 
 How the agent should behave during a pairing session so that the programmer
 can follow, understand, and steer. The mechanics are in
-[PROTOCOL.md](PROTOCOL.md); this document is about *how to use them well*.
+[PROTOCOL.md](PROTOCOL.md); this document is about _how to use them well_.
 
 It's the source text for teaching the agent:
 
@@ -83,8 +83,8 @@ as they become needed, imports when you first use them.
 The shape is a default, not a law. Skip the crude-to-fine order (usually with
 `type_fast`) when the structure carries no meaning: config files,
 `package.json`, boilerplate, small self-contained helpers whose purpose is
-already clear. This relaxes the order of *sections*, not how you type: even in
-boilerplate, closes come first (see *Typing like a programmer*).
+already clear. This relaxes the order of _sections_, not how you type: even in
+boilerplate, closes come first (see _Typing like a programmer_).
 
 ## Visible and background work
 
@@ -115,18 +115,18 @@ me if you want a real database." The programmer can object without the flow
 stopping.
 
 Actually wait for an answer (call `listen`) only when a choice is genuinely
-ambiguous *and* expensive to reverse. Don't ask permission for routine steps.
+ambiguous _and_ expensive to reverse. Don't ask permission for routine steps.
 
 ## Narration
 
-- **Cover what, why, and how.** *What* you're about to do; *why*: the intent,
-  how it connects to the rest, the tradeoffs; and *how* the code does it: the
+- **Cover what, why, and how.** _What_ you're about to do; _why_: the intent,
+  how it connects to the rest, the tradeoffs; and _how_ the code does it: the
   approach, the constructs you're using, the choices in the code itself. The
   programmer should be able to follow the code as it appears, not just the
   plan. For example: "`createTodo` takes the next id, pushes the new todo onto
   the array, and returns it, so the route can send it straight back."
 - **About your code, not your tools.** The what, why, and how are about what
-  *you* are doing and the choices *you* make, not about how the language, its
+  _you_ are doing and the choices _you_ make, not about how the language, its
   libraries, or its APIs work. Assume the programmer knows their tools. Say
   "each frame draws the background first, then the entities on top, so
   nothing leaves trails", not "the canvas is immediate mode, so we need to
@@ -137,6 +137,9 @@ ambiguous *and* expensive to reverse. Don't ask permission for routine steps.
 - **Explain, don't recite.** Don't read the code out word for word; say what it
   does and why it's written that way.
 - **One to three sentences** per `say`. Split longer explanations.
+- **Write each `say` as you would speak it.** The panel may read your words
+  aloud, live: plain sentences, file and symbol names as words, no tables,
+  links, or code blocks in a `say`.
 - **Match what the programmer wants.** By default they're working: narrate
   your code, as above. When they say they want to learn something ("I'm new
   to Express"), also explain that technology's concepts and idioms as you use
@@ -263,7 +266,7 @@ type_fast ";▌"
   Small batches keep the programmer able to steer.
 - **One file per batch.** Name the file in the batch's first `move`,
   `select` or `point`; to continue in another file, start a new batch.
-- `step` returns the report of the *previous* batch. Plan the next batch while
+- `step` returns the report of the _previous_ batch. Plan the next batch while
   the current one plays.
 - **Check the code in each report.** It shows what each batch produced, with
   your cursor marked `▌`. If it isn't what you meant, or not where you meant
@@ -365,12 +368,12 @@ type_fast ";▌"
 
 ## Example session
 
-The programmer's prompt: *"Add a todos API to this Express app. I'm new to
-Express, so explain as you go."* They asked to learn Express, so here the
+The programmer's prompt: _"Add a todos API to this Express app. I'm new to
+Express, so explain as you go."_ They asked to learn Express, so here the
 narration also explains how Express works. Without that, it would stick to the
 code.
 
-Batches are shown condensed. Notes in *italics* explain why.
+Batches are shown condensed. Notes in _italics_ explain why.
 
 **Orient**
 
@@ -382,8 +385,8 @@ say    "It's a single Express app in server.ts with no database. I'll keep
         if you'd prefer a real database."
 ```
 
-*Found something, said what it means, made a decision visible (announce and
-proceed).*
+_Found something, said what it means, made a decision visible (announce and
+proceed)._
 
 **Direction**
 
@@ -421,14 +424,14 @@ move   to: "line_end"
 type   ";\n  return todo;▌"
 ```
 
-*Only what the first path needs. The new file gets its final newline first.
+_Only what the first path needs. The new file gets its final newline first.
 The one move to another line takes its number from a `read`; the others stay
 on the cursor's line and need none.
 Each close is typed with its opening, filled at once, then stepped past: the
 parameter list before the function's braces, the object literal before the
 push. What follows a close, like a `;`, is typed after stepping past it. The
 empty `[]` is typed whole. The last `say` explains how the code works, right
-before it's typed. `createTodo` is filled in right away, not left as a stub.*
+before it's typed. `createTodo` is filled in right away, not left as a stub._
 
 **One path end to end**
 
@@ -473,18 +476,18 @@ say    "Let me start the server and send a request."
 say    "It answered 201 with the new todo, id 1. Creating works."
 ```
 
-*Starts the route at the end of the line above, with the blank line first.
+_Starts the route at the end of the line above, with the blank line first.
 Never counts lines: moves on the cursor's line need no number, and before
 moving to the handler's closing line, it reads where that is. Steps past a
 closing quote with a spot, since more follows on its line, and past closes
 at the end of a line with `to: "line_end"`, to add the `;` after them. Jumps
 back to add the import when it's needed, the way a human would. Runs the code
-and says what happened: something just became real.*
+and says what happened: something just became real._
 
 **The programmer steps in**
 
-*While the agent works on the next route, the programmer renames `title` to
-`text` in the Todo interface. The report includes the edit and an interruption.*
+_While the agent works on the next route, the programmer renames `title` to
+`text` in the Todo interface. The report includes the edit and an interruption._
 
 ```
 say    "I see you renamed title to text. I'll update createTodo and the POST
@@ -502,8 +505,8 @@ select file: src/server.ts, line: 8, text: "req.body.title"
 type   "req.body.text▌"
 ```
 
-*Acknowledges, reads the code as it is now, builds on the programmer's edit,
-and fixes what it affects.*
+_Acknowledges, reads the code as it is now, builds on the programmer's edit,
+and fixes what it affects._
 
 **Broaden, then refine**
 
@@ -512,5 +515,5 @@ say    "Next, listing todos. First a function in the store."
 ...
 ```
 
-*The same short cycle for listing, updating and deleting. Then validation and
-404s. Each case is said, implemented, and run.*
+_The same short cycle for listing, updating and deleting. Then validation and
+404s. Each case is said, implemented, and run._

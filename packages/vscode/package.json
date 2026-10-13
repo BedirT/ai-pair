@@ -60,6 +60,46 @@
         "category": "AI Pair"
       },
       {
+        "command": "aiPair.startOmp",
+        "title": "Start OMP",
+        "category": "AI Pair",
+        "icon": "$(play)"
+      },
+      {
+        "command": "aiPair.stopOmp",
+        "title": "Stop OMP",
+        "category": "AI Pair",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "aiPair.abortOmp",
+        "title": "Interrupt OMP",
+        "category": "AI Pair"
+      },
+      {
+        "command": "aiPair.newOmpChat",
+        "title": "New OMP Chat",
+        "category": "AI Pair",
+        "icon": "$(add)"
+      },
+      {
+        "command": "aiPair.selectOmpModel",
+        "title": "Select OMP Model",
+        "category": "AI Pair",
+        "icon": "$(chevron-down)"
+      },
+      {
+        "command": "aiPair.toggleVoice",
+        "title": "Toggle Voice",
+        "category": "AI Pair",
+        "icon": "$(unmute)"
+      },
+      {
+        "command": "aiPair.selectVoice",
+        "title": "Select Voice",
+        "category": "AI Pair"
+      },
+      {
         "command": "aiPair.playDemo",
         "title": "Play Demo Session",
         "category": "AI Pair"
@@ -107,6 +147,48 @@
         {
           "command": "aiPair.askAboutSelection",
           "when": "aiPair.active && editorHasSelection"
+        },
+        {
+          "command": "aiPair.startOmp",
+          "when": "!aiPair.ompActive"
+        },
+        {
+          "command": "aiPair.stopOmp",
+          "when": "aiPair.ompActive"
+        },
+        {
+          "command": "aiPair.abortOmp",
+          "when": "aiPair.ompActive"
+        },
+        {
+          "command": "aiPair.newOmpChat",
+          "when": "aiPair.ompActive"
+        },
+        {
+          "command": "aiPair.selectOmpModel",
+          "when": "aiPair.ompActive"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "aiPair.startOmp",
+          "when": "view == aiPair.narration && !aiPair.ompActive",
+          "group": "navigation@1"
+        },
+        {
+          "command": "aiPair.newOmpChat",
+          "when": "view == aiPair.narration && aiPair.ompActive",
+          "group": "navigation@1"
+        },
+        {
+          "command": "aiPair.selectOmpModel",
+          "when": "view == aiPair.narration && aiPair.ompActive",
+          "group": "navigation@2"
+        },
+        {
+          "command": "aiPair.stopOmp",
+          "when": "view == aiPair.narration && aiPair.ompActive",
+          "group": "navigation@3"
         }
       ]
     },
@@ -134,7 +216,43 @@
           "type": "boolean",
           "default": true,
           "scope": "application",
-          "markdownDescription": "Ask in the Pair panel before running each command the agent plays in the terminal (`run`). Turning this off lets the agent run commands without Claude Code's own permission prompt."
+          "markdownDescription": "Ask in the Pair panel before running each command the agent plays in the terminal (`run`). Turning this off lets the agent run commands without its own permission prompt."
+        },
+        "aiPair.omp.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Path to the omp program the Pair panel starts. Empty finds omp on the PATH, in ~/.local/bin, or in ~/.bun/bin."
+        },
+        "aiPair.omp.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model the panel's OMP starts with (OMP's fuzzy match, like opus or openai/gpt-5.2). Empty uses OMP's own default. The panel's Model button changes it for the chat."
+        },
+        "aiPair.voice.enabled": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "markdownDescription": "Hear the agent instead of reading it: each thing it says is spoken on this machine (Kokoro, the local speech model OMP ships; the first turn-on may download it, about 100 MB of model in a few hundred MB of runtime). The words still land in the panel's history. Short lines talk over the typing; a long one is spoken first."
+        },
+        "aiPair.voice.voice": {
+          "type": "string",
+          "default": "af_heart",
+          "enum": ["af_heart", "af_bella", "af_nicole", "af_aoede", "af_kore", "af_sarah", "am_michael", "am_fenrir", "am_puck", "bf_emma", "bm_george", "bm_fable"],
+          "description": "Whose Kokoro voice the agent speaks with. The panel's Pick a voice changes it."
+        },
+        "aiPair.voice.rate": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0.5,
+          "maximum": 2,
+          "description": "How fast the voice talks: 1 is its own pace."
+        },
+        "aiPair.voice.runtimePath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Path to a bun or node program to run the voice process with (VS Code's own runtime cannot load the speech engine). Empty finds bun, then node, in the usual places."
         }
       }
     },

@@ -5,7 +5,7 @@ agent is in [PROTOCOL.md](PROTOCOL.md), and the components and how they
 connect are in [ARCHITECTURE.md](ARCHITECTURE.md). This document covers what
 the programmer experiences.
 
-Status: **draft**. Numbers marked *tunable* are initial guesses to be adjusted
+Status: **draft**. Numbers marked _tunable_ are initial guesses to be adjusted
 by feel.
 
 ## Agent cursor
@@ -16,14 +16,14 @@ small name label. The agent's selection gets a background in the same color;
 
 The cursor's appearance shows the agent's state:
 
-| State     | When                                               | Appearance                  |
-|-----------|----------------------------------------------------|-----------------------------|
-| typing    | playing `type`, `type_fast`, `move`, `select`, `delete` | agent color            |
-| read      | reading pause after `say`                          | accent color, pulsing       |
-| thinking  | queue empty, agent hasn't called yet               | dimmed                      |
-| paused    | playback paused                                    | dimmed, pause marker        |
-| listening | agent is in `listen`                               | outline only                |
-| navigator | programmer's turn                                  | outline only, name label    |
+| State     | When                                                    | Appearance               |
+| --------- | ------------------------------------------------------- | ------------------------ |
+| typing    | playing `type`, `type_fast`, `move`, `select`, `delete` | agent color              |
+| read      | reading pause after `say`                               | accent color, pulsing    |
+| thinking  | queue empty, agent hasn't called yet                    | dimmed                   |
+| paused    | playback paused                                         | dimmed, pause marker     |
+| listening | agent is in `listen`                                    | outline only             |
+| navigator | programmer's turn                                       | outline only, name label |
 
 The **read** state is the important one: it tells the programmer to look at the
 narration panel. Decorations can't animate, so the pulse is done by swapping
@@ -47,15 +47,15 @@ Layout, top to bottom:
 
 1. **The band**, a full-width area on the editor's background, holding
    everything about now:
-   - **Its header**: the agent's state (a colored dot and a few words: *Agent
-     is typing*, *Read this*, *Needs you*, *Your turn*), and the controls,
+   - **Its header**: the agent's state (a colored dot and a few words: _Agent
+     is typing_, _Read this_, _Needs you_, _Your turn_), and the controls,
      compact and quiet, as icons without fills: Pause/Resume, Interrupt, My
      turn, the speed, End. During the programmer's turn, Pause and Interrupt
      give way to Hand back, the one labeled control, since it's the main
      action then. The speed opens a menu of 0.4× to 3.0×. The agent's color
      is on the dot only, never on the controls.
    - **The current message**, in large text (≈1.3× the editor font,
-     *tunable*), high contrast. Its **top edge is fixed**, right under the
+     _tunable_), high contrast. Its **top edge is fixed**, right under the
      header; its height grows downward with the message length. A new message
      fades in, in sync with the cursor's read state. It stays at full
      strength while paused, since a pause is often for reading it. The code
@@ -77,7 +77,14 @@ Layout, top to bottom:
 
 Without a session, the band has no header: it says there's no session and
 how to start one, and after a session, how it ended, with the agent's
-summary. In every message, code spans that name a file (`game.ts`,
+summary. This is also where OMP lives when it's the panel's own agent: a
+**Start OMP** button, then, once it's running, its state and model in a few
+words with Stop, New chat and Model beside them, and the reply box under
+them. Its words go to the history as the agent's messages — streaming in
+place — its tool calls as small mono lines, and its stops and starts as
+dividers. In a session none of that shows twice: the narration is its voice,
+and the band looks as it does for any agent.
+In every message, code spans that name a file (`game.ts`,
 `src/server.ts`) open it, found by name if it isn't a path from the
 workspace's root, and URLs open in the browser. File and code references are
 mono and quietly underlined, taking the link color only on hover.
@@ -99,6 +106,16 @@ colors, shown after a moment's hover or on keyboard focus, since native
 tooltips show unreliably in a webview. The agent's colors are theme colors too (see Agent
 cursor).
 
+**The voice.** Watching code type in one place and reading about it in
+another is two jobs at once, so the panel can read the narration aloud
+itself: **Voice** in the band's controls (and, before a session, above the
+reply box, with **Pick a voice** beside it). With the voice on, the band's
+big current message goes away — the words go straight to the history,
+where they can still be scanned back over — and the eyes stay on the code.
+The status line and the reading ring stay: the ring now fills over
+speaking time. A short `say` is spoken over the typing that follows it; a
+long one is spoken first. Interrupting cuts the voice off mid-line.
+
 Behavior:
 
 - **Typing in the reply box pauses playback**, the way a pair stops when you
@@ -109,24 +126,24 @@ Behavior:
 - With text in the reply box, "Hand back" hands back the turn with it as the
   message.
 - **Sharing a selection.** While the programmer has code selected in the
-  editor, a line above the reply box says *With selection
-  `src/server.ts:12–18`*: the reply (or "Hand back") takes the selection
+  editor, a line above the reply box says _With selection
+  `src/server.ts:12–18`_: the reply (or "Hand back") takes the selection
   along. × leaves it out; the next selection brings the line back. The
-  selection is sent once. *Ask the Agent About the Selection* in the editor's
+  selection is sent once. _Ask the Agent About the Selection_ in the editor's
   context menu focuses the reply box.
 - **Commands.** When the agent plays a `run`, the band shows the command under
   the current message, with **Run**, **Allow for session** (the same command
   won't ask again until the session ends) and **Skip** (unless
   `aiPair.confirmCommands` is off), with the cursor in its read state and the
-  status *Needs you*. The
-  command then runs in an *AI Pair* terminal, revealed without taking focus,
+  status _Needs you_. The
+  command then runs in an _AI Pair_ terminal, revealed without taking focus,
   and the history records its exit code.
 - **Space pauses and resumes** while the panel has focus, except in the reply
   box. It never presses the focused button (after a click, that could be
   End); Enter still does.
-- The command *AI Pair: Reply to the Agent* focuses the reply box from the
+- The command _AI Pair: Reply to the Agent_ focuses the reply box from the
   editor; bind it to a key of your choice.
-- During the programmer's turn the band's header says *Your turn*, and the
+- During the programmer's turn the band's header says _Your turn_, and the
   agent navigates: its comments appear as the current message as usual.
 
 ## Playback
@@ -135,36 +152,36 @@ Behavior:
 
 Every number lives in one place, [`timing.ts`](packages/core/src/timing.ts),
 for calibration. The `aiPair.timing` setting overrides any of them without a
-rebuild. All are milliseconds at normal speed (*tunable*).
+rebuild. All are milliseconds at normal speed (_tunable_).
 
 **Typing.** Quick within words, a small pause as each word starts, longer
 after punctuation, brackets and newlines, the way people actually type:
 
-| Moment                                               | Pause          |
-|------------------------------------------------------|----------------|
-| between characters within a word                     | 55, ±25%       |
-| extra as a word starts (non-alphanumeric → alphanumeric) | +110       |
-| extra after `,` `;` `:`                              | +90            |
-| extra after an opening `(` `[` `{`                   | +70            |
-| extra after a newline                                | +350           |
-| leading indentation                                  | instant        |
+| Moment                                                   | Pause    |
+| -------------------------------------------------------- | -------- |
+| between characters within a word                         | 55, ±25% |
+| extra as a word starts (non-alphanumeric → alphanumeric) | +110     |
+| extra after `,` `;` `:`                                  | +90      |
+| extra after an opening `(` `[` `{`                       | +70      |
+| extra after a newline                                    | +350     |
+| leading indentation                                      | instant  |
 
 `type_fast` plays the same rhythm at a quarter of the delays. Leading
 indentation appears instantly because that's what the programmer's own editor
 would do; watching spaces being typed is noise.
 
-**Cognitive switches.** The pause comes *after* a change, so the programmer
+**Cognitive switches.** The pause comes _after_ a change, so the programmer
 can take it in before anything happens there:
 
-| After…                                           | Pause | Why                          |
-|--------------------------------------------------|-------|------------------------------|
-| a move within 15 lines in the same file          | 450   | eyes find the cursor again   |
-| a move farther, or to another file               | 900   | the view changed: re-orient  |
-| a selection appears                              | 700   | read what's about to change  |
-| a deletion                                       | 300   | register what's gone         |
-| a `point` highlight                              | 400   | find the highlighted code    |
+| After…                                  | Pause | Why                         |
+| --------------------------------------- | ----- | --------------------------- |
+| a move within 15 lines in the same file | 450   | eyes find the cursor again  |
+| a move farther, or to another file      | 900   | the view changed: re-orient |
+| a selection appears                     | 700   | read what's about to change |
+| a deletion                              | 300   | register what's gone        |
+| a `point` highlight                     | 400   | find the highlighted code   |
 
-Plus a 150 ms beat *before* a move or a selection, so it doesn't look
+Plus a 150 ms beat _before_ a move or a selection, so it doesn't look
 instantaneous.
 
 When text follows the `▌` in a `type`, the cursor steps back to the `▌` after

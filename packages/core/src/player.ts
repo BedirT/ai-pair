@@ -7,10 +7,10 @@ import { actionKinds, CURSOR_MARKER, moveProblem, spanProblem, typeProblem } fro
 import { resolveSpan, resolveSpot, spanCandidates, spotCandidates, type Resolution } from "./places"
 import type { Config } from "./controller"
 import type { LineIds, Sighting } from "./lines"
-import type { Change, EditorPort, Focus, PanelPort } from "./ports"
+import type { Change, EditorPort, Focus, PanelPort, VoicePort } from "./ports"
 import { fileLines, isLineStart, lineEnd, lineText, position } from "./text"
 import type { Pacing } from "./timeline"
-import { planTyping, readingTime } from "./typing"
+import { planTyping, readingTime, wordCount } from "./typing"
 
 /** What playback reads and changes. */
 export type Scene = {
@@ -39,6 +39,8 @@ export type Stage = {
   render(): void
   /** Waits for the programmer to allow or decline a command. */
   confirm(id: number, command: string): Promise<boolean>
+  /** The voice to speak a `say` with, when one is on and ready. Rehearsals have none: they are silent. */
+  voice?(): VoicePort | undefined
   /** The identities of the lines of the files played in. */
   lines: LineIds
   /**
@@ -287,8 +289,22 @@ export class Player {
 
     if ("say" in action) {
       panel.post({ type: "say", text: action.say })
-      const ms = readingTime(action.say, timing.reading) / this.stage.speed()
       this.reading = true
+      const voice = this.stage.voice?.()
+      if (voice) {
+        const words = wordCount(action.say)
+        const spokenMs = (words * timing.voice.msPerWord) / this.stage.speed()
+        panel.post({ type: "reading", ms: spokenMs })
+        this.stage.render()
+        const spoken = voice.speak(action.say).catch(() => {})
+        // A long say gets the floor; a short one talks over the typing that follows.
+        if (words > timing.voice.longWords) await spoken
+        else await this.stage.pacing.sleep(timing.voice.shortMs / this.stage.speed())
+        this.reading = false
+        this.stage.render()
+        return ok
+      }
+      const ms = readingTime(action.say, timing.reading) / this.stage.speed()
       panel.post({ type: "reading", ms })
       this.stage.render()
       await this.stage.pacing.sleep(ms)

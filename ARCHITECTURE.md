@@ -35,6 +35,10 @@ Status: **draft**.
   versions its own edits produce.
 - **The narration panel** is a webview. It talks to the extension via
   `postMessage`.
+- **OMP in the panel** is the one agent the extension runs itself: a child
+  process it drives over OMP's RPC mode, so the conversation can live in the
+  panel with no terminal. It reaches the editor through `pair-mcp` like any
+  other agent; nothing about the protocol changes for it.
 
 ### Why a relay
 
@@ -62,9 +66,9 @@ file:
   "pid": 41234,
   "workspaceFolders": ["/Users/me/projects/todo-app"],
   "port": 53817,
-  "token": "…",               // random, per window
+  "token": "…", // random, per window
   "protocolVersion": 1,
-  "lastFocused": 1758700000   // updated when the window gains focus
+  "lastFocused": 1758700000, // updated when the window gains focus
 }
 ```
 
@@ -141,7 +145,7 @@ The panel keeps each session's narration history. Between sessions it shows
 
 ## Starting a session
 
-**First-time setup.** The command *AI Pair: Set up agent* registers `pair-mcp`
+**First-time setup.** The command _AI Pair: Set up agent_ registers `pair-mcp`
 with the harnesses the programmer picks, in each one's user-wide MCP
 configuration, so it works in every project. It edits only the `pair` entry,
 keeping the rest of the file as it was: JSON and JSONC with `jsonc-parser`,
@@ -152,16 +156,55 @@ VS Code itself (Copilot) need no setup: the extension provides the server to
 them through VS Code's MCP API, running the relay directly in the workspace.
 For any other harness it copies the config snippet to the clipboard. The
 extension offers this once, the first time it starts. The harnesses and their
-files are in [`agents.ts`](packages/vscode/src/agents.ts).
+files are in [`agents.ts`](packages/vscode/src/agents.ts). OMP comes first in
+that list; its entry carries `timeout: 0`, since pair calls block while the
+programmer watches and replies, far past OMP's 30-second MCP default.
 
 **Each session.** The programmer asks the agent to pair ("let's pair on adding
 a todos API, I'm new to Express"), or runs the server's `start` prompt (in
 Claude Code: `/mcp__pair__start`). The agent calls `start`, which returns the
 [agent guide](AGENT_GUIDE.md) along with the first report.
 
-**Later, from the editor.** Starting from the editor (type the task in the
-panel, and the extension launches the harness in the integrated terminal)
-would be a convenience on top, with a small adapter per harness. Not in v1.
+**OMP, from the editor.** _AI Pair: Start OMP_ (the panel's **Start OMP**) sets
+the pair server up in OMP if it isn't, then runs `omp --mode rpc-ui` in the
+workspace folder and talks its newline-JSON RPC over the child's stdio
+([`ompRpc.ts`](packages/vscode/src/ompRpc.ts)). The panel is the conversation:
+outside a pair session its reply box prompts (or steers) OMP and its replies
+stream into the history; in a session the box is the session's, as with any
+agent. OMP's dialogs (`select`, `confirm`, `input`, `editor`, `ask`) are VS
+Code's own quick picks and inputs. The process starts with an appended system
+prompt that says code work pairs — every edit goes through pair `step`
+actions, never OMP's own file tools — and a plain question is answered in the
+chat. **New chat** and **Model** map to the RPC `new_session` and `set_model`,
+**Stop** to `abort`, and closing the child's stdin ends it. Its stderr
+goes to the _AI Pair OMP_ output channel. Other harnesses still run outside
+the editor, as above.
+
+## The voice
+
+A `say` can be spoken instead of only shown. The player asks its stage for a
+voice ([`VoicePort`](packages/core/src/ports.ts)); without one it keeps the
+reading pause. With one, a short `say` holds playback only briefly and is
+spoken over the typing that follows, while a long one (over
+`timing.voice.longWords`) is awaited — through the same `speak` promise,
+which interruptions settle by stopping the voice. Rehearsals never get a
+voice: they are silent.
+
+The voice itself is **Kokoro**, the local speech model OMP ships, kept warm
+in a small worker process ([`voiceWorker.ts`](packages/vscode/src/voiceWorker.ts),
+built to `dist/voiceWorker.js`). It cannot run under VS Code's Electron
+runtime — the hardened runtime refuses the speech engine's native code —
+so bun, else node, found on the machine runs it. It loads OMP's installed
+`kokoro-js` (`~/.omp/agent/cache/tts-runtime/kokoro-*`, fetched on first
+turn-on by running `omp say` once), takes one sentence per JSON line in,
+and writes a WAV per line. The extension ([`voice.ts`](packages/vscode/src/voice.ts))
+cleans each `say` for the ear, splits it into sentences, makes the next
+while the last plays through the OS player (`afplay`, PowerShell's
+SoundPlayer, PulseAudio/PipeWire tools), and drops the oldest waiting
+sentences when speech falls behind. With no JS runtime to be had,
+`omp say` speaks each line itself — seconds slower to start, same voice.
+Words are spoken for every agent, not just the panel's OMP: the sound
+hangs off playback, not off the harness.
 
 ## Distribution
 
@@ -193,6 +236,7 @@ the official MCP TypeScript SDK.
 
 - **Permission prompts.** When the harness asks for permission, it notifies the
   programmer itself.
-- **Starting from the editor** (see above).
+- **Starting other harnesses from the editor.** OMP starts from the panel
+  (above); the rest are still launched by the programmer.
 - **Multiple agents** in one window.
 - **Zed.**

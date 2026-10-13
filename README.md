@@ -15,7 +15,7 @@
 
 Some of us, at least some of the time, want to understand our code at a deep
 level. For that, handing a task to an agent and reviewing the diff that comes
-back can be exhausting. With *AI Pair Programmer*, you're there for every
+back can be exhausting. With _AI Pair Programmer_, you're there for every
 keystroke instead, and you end up knowing the code almost as if you'd typed it
 yourself.
 
@@ -38,45 +38,68 @@ through code you don't know yet.
 
 ![The agent walks through a function line by line, highlighting each line and explaining it in the Pair panel](media/explain-line-by-line.gif)
 
-It works in VS Code, with the coding agent you already use. Setup is built in
-for Claude Code, Codex, OpenCode, Gemini CLI, Cursor and GitHub Copilot, and
-any agent that supports MCP can be connected by hand.
+It works in VS Code. With [OMP](https://omp.sh) it needs no terminal at all:
+**Start OMP** in the Pair panel and talk to it right there. Setup is also built
+in for Claude Code, Codex, OpenCode, Gemini CLI, Cursor and GitHub Copilot,
+and any agent that supports MCP can be connected by hand.
 
 **Note:** It works best with strong models; weaker ones tend to struggle with
 this way of working.
 
 ## How to use it
 
-Once the extension is [installed](#install) and
-[connected to your agent](#connect-your-agent), keep using your agent as usual.
-When you want to pair:
+Once the extension is [installed](#install), the easy way is OMP in the panel:
+
+1. Open the project in VS Code and open the **Pair** panel.
+2. Press **Start OMP**. The first time, it also gives OMP the pair server, so
+   there is nothing to set up by hand.
+3. Say what to do in the panel: _"Add a settings page. I'm new to Svelte,
+   explain as you go."_ For code work, OMP starts a pair session and types in
+   your editor; a plain question it answers in the panel. **Model** picks the
+   model, **New chat** starts over, **Stop** (in the panel) halts a turn, and
+   the exit button turns OMP off.
+
+With any other agent, [connect it](#connect-your-agent) once, keep using it as
+usual, and when you want to pair:
 
 1. Open the project in VS Code, and start your agent **in the same folder** (or
    a subfolder of it).
-2. Ask it to pair: *"Let's pair on adding a settings page."* In Claude Code,
+2. Ask it to pair: _"Let's pair on adding a settings page."_ In Claude Code,
    you can also run `/mcp__pair__start`. If you want to learn the technology
-   too, say so: *"…I'm new to Svelte, explain as you go."*
+   too, say so: _"…I'm new to Svelte, explain as you go."_
 3. The **Pair** panel opens in the secondary side bar, and the agent's cursor
    appears in your editor.
 
 Anything you say or edit interrupts the agent, so its next move takes it into
 account. While you pair:
 
-| To… | Do this |
-|---|---|
-| say something to the agent | type in the reply box, press Enter. Typing pauses playback. |
-| ask about some code | select it in the editor, then reply: the selection goes along (× leaves it out) |
-| let it run a command | the agent's tests and builds play in an *AI Pair* terminal; **Run**, **Allow for session**, or **Skip** in the panel |
-| stop it right now | **Interrupt**, or just edit the code: any edit interrupts |
-| look around | scroll or switch files. Playback pauses until you **Resume**, which brings you back to the agent's cursor |
-| write a part yourself | **My turn**. The agent becomes the navigator and comments as you type. **Hand back** returns the turn, with your reply if you typed one |
-| change the pace | the speed menu (**1.0×**), from 0.4× to 3.0× |
-| finish | **End**, or tell the agent you're done. You can pair again anytime |
+| To…                        | Do this                                                                                                                                 |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| say something to the agent | type in the reply box, press Enter. Typing pauses playback.                                                                             |
+| ask about some code        | select it in the editor, then reply: the selection goes along (× leaves it out)                                                         |
+| let it run a command       | the agent's tests and builds play in an _AI Pair_ terminal; **Run**, **Allow for session**, or **Skip** in the panel                    |
+| stop it right now          | **Interrupt**, or just edit the code: any edit interrupts                                                                               |
+| look around                | scroll or switch files. Playback pauses until you **Resume**, which brings you back to the agent's cursor                               |
+| write a part yourself      | **My turn**. The agent becomes the navigator and comments as you type. **Hand back** returns the turn, with your reply if you typed one |
+| change the pace            | the speed menu (**1.0×**), from 0.4× to 3.0×                                                                                            |
+| hear it, not read it       | turn **Voice** on in the panel. It talks while it types, so your eyes stay on the code; the words still land in the history             |
+| finish                     | **End**, or tell the agent you're done. You can pair again anytime                                                                      |
 
 The cursor's color tells you what the agent is doing. It's yellow and pulsing
-when it's just said something and is waiting for you to read it.
+when it's just said something and is waiting for you to read it — or, with the
+voice on, while it says it.
 
-**Try it without an agent:** *AI Pair: Play Demo Session* plays a scripted
+**Hear it instead of reading it.** Turn **Voice** on in the Pair panel and
+everything the agent says is spoken as it works: a short line talks over the
+typing that follows, a long one is spoken first. The big text in the panel
+goes away, so there's only one thing to watch — the code. The words still
+land in the panel's history. The voice is **Kokoro**, a speech model that
+runs on your own machine (the one OMP ships), so nothing is sent anywhere to
+be spoken. The first turn-on may download it once: about 100 MB of model, in
+a few hundred MB of runtime that OMP already keeps. **Pick a voice** chooses
+whose it is, and turning the voice off brings the big text back.
+
+**Try it without an agent:** _AI Pair: Play Demo Session_ plays a scripted
 session that adds a small API to an Express app, which it creates in
 `ai-pair-demo/`.
 
@@ -126,33 +149,40 @@ code --install-extension ai-pair-*.vsix
    your agent runs, at `~/.ai-pair/bin/pair-mcp`
    (`%USERPROFILE%\.ai-pair\bin\pair-mcp.cmd` on Windows). It runs on
    VS Code's own runtime, so it doesn't need Node.js.
-2. **Run *AI Pair: Set Up Agent*** from the command palette (VS Code also
+2. **Run _AI Pair: Set Up Agent_** from the command palette (VS Code also
    offers this the first time the extension starts). Pick your agents; the
    ones it finds installed are already checked. For each one, it adds a
    server named `pair` to that agent's user-wide MCP configuration, leaving
    everything else in the file as it was:
 
-   | Agent | Where |
-   |---|---|
-   | **Claude Code** (the CLI, the IDE extensions, the Claude desktop app's Code tab) | `claude mcp add --scope user`, or `~/.claude.json` without the `claude` command |
-   | **Codex** (the CLI, the IDE extension, the app) | `~/.codex/config.toml` (or in `$CODEX_HOME`) |
-   | **OpenCode** | `~/.config/opencode/opencode.json` (`.jsonc` if you have one), on Windows too |
-   | **Gemini CLI** | `~/.gemini/settings.json` |
-   | **Cursor** | `~/.cursor/mcp.json` |
-   | **Another agent** | copies an MCP server configuration to the clipboard: a stdio server named `pair` running the launcher |
+   | Agent                                                                            | Where                                                                                                                                                               |
+   | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | **OMP**                                                                          | `~/.omp/agent/mcp.json` (a named profile's folder when one is in use). The panel's **Start OMP** does this for you; set up is only for an OMP you run in a terminal |
+   | **Claude Code** (the CLI, the IDE extensions, the Claude desktop app's Code tab) | `claude mcp add --scope user`, or `~/.claude.json` without the `claude` command                                                                                     |
+   | **Codex** (the CLI, the IDE extension, the app)                                  | `~/.codex/config.toml` (or in `$CODEX_HOME`)                                                                                                                        |
+   | **OpenCode**                                                                     | `~/.config/opencode/opencode.json` (`.jsonc` if you have one), on Windows too                                                                                       |
+   | **Gemini CLI**                                                                   | `~/.gemini/settings.json`                                                                                                                                           |
+   | **Cursor**                                                                       | `~/.cursor/mcp.json`                                                                                                                                                |
+   | **Another agent**                                                                | copies an MCP server configuration to the clipboard: a stdio server named `pair` running the launcher                                                               |
+   | **GitHub Copilot** in VS Code needs none of this: the extension gives it         |
+   | the `pair` server itself.                                                        |
 
-   **GitHub Copilot** in VS Code needs none of this: the extension gives it
-   the `pair` server itself.
 3. **Restart your agent** so it picks up the new server.
 
 ## Settings
 
-| Setting | |
-|---|---|
-| `aiPair.speed` | Overall playback speed (the panel's speed menu offers 0.4× to 3.0×). |
-| `aiPair.agentName` | The name on the agent's cursor. |
-| `aiPair.timing` | Fine-tune any typing or pause duration, e.g. `{ "afterSelectMs": 900, "type": { "wordStartMs": 140 } }`. Every key is in [`timing.ts`](packages/core/src/timing.ts). |
-| `aiPair.confirmCommands` | Ask before each command the agent runs in the terminal (default on). Turned off, the agent's commands run without any prompt, not even its own. |
+| Setting                    |                                                                                                                                                                      |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `aiPair.speed`             | Overall playback speed (the panel's speed menu offers 0.4× to 3.0×).                                                                                                 |
+| `aiPair.agentName`         | The name on the agent's cursor.                                                                                                                                      |
+| `aiPair.timing`            | Fine-tune any typing or pause duration, e.g. `{ "afterSelectMs": 900, "type": { "wordStartMs": 140 } }`. Every key is in [`timing.ts`](packages/core/src/timing.ts). |
+| `aiPair.confirmCommands`   | Ask before each command the agent runs in the terminal (default on). Turned off, the agent's commands run without any prompt, not even its own.                      |
+| `aiPair.omp.path`          | Path to the `omp` program the panel starts. Empty finds it on the PATH, in `~/.local/bin`, or in `~/.bun/bin`.                                                       |
+| `aiPair.omp.model`         | Model the panel's OMP starts with (OMP's fuzzy match). Empty uses OMP's own default.                                                                                 |
+| `aiPair.voice.enabled`     | Speak what the agent says, live, on this machine. Off by default; the panel's **Voice** button flips it.                                                             |
+| `aiPair.voice.voice`       | Whose Kokoro voice it is.                                                                                                                                            |
+| `aiPair.voice.rate`        | How fast the voice talks (1 is its own pace).                                                                                                                        |
+| `aiPair.voice.runtimePath` | A bun or node program to run the voice with, if the usual places have none.                                                                                          |
 
 ## Troubleshooting
 
@@ -160,9 +190,17 @@ code --install-extension ai-pair-*.vsix
   that's open in VS Code. Open that folder in VS Code, or start the agent in
   it.
 - **The agent doesn't have the pair tools.** Restart the agent after setting
-  it up. *AI Pair: Set Up Agent* marks the agents that are set up. With
+  it up. _AI Pair: Set Up Agent_ marks the agents that are set up. With
   Claude Code, `claude mcp list` should show `pair`. With Copilot, `pair`
-  should be in *MCP: List Servers*; start it there if it isn't running.
+  should be in _MCP: List Servers_; start it there if it isn't running.
+- **Start OMP says OMP wasn't found.** Install OMP, or set `aiPair.omp.path`
+  to its full path. If OMP starts but does no code work, its own words are in
+  the _AI Pair OMP_ output channel.
+- **The voice won't start.** It is OMP's Kokoro, run by bun or node (VS Code's
+  own runtime can't load its native code). Install OMP so the first turn-on
+  can fetch it, and have bun or node on the machine, or set
+  `aiPair.voice.runtimePath`. What it said on its way out is in the _AI Pair
+  Voice_ output channel.
 - **After updating the extension,** reload the VS Code window and restart the
   agent.
 

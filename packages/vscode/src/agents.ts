@@ -32,6 +32,34 @@ export const SERVER = "pair"
 
 export const AGENTS: Agent[] = [
   {
+    id: "omp",
+    label: "OMP",
+    detect: (host) => !!findOmp(host) || exists(path.join(host.home, ".omp")),
+    isSetUp: (host, command) => {
+      const data = readJson(ompFile(host))
+      const entry = data?.mcpServers?.[SERVER]
+      if (entry?.command !== command) return false
+      // OMP turns a server off three ways: its own `enabled: false`, the user allowlist that can
+      // force it back on, and the denylist, which wins over both.
+      if (Array.isArray(data?.disabledServers) && data.disabledServers.includes(SERVER)) return false
+      if (entry.enabled === false && !(Array.isArray(data?.enabledServers) && data.enabledServers.includes(SERVER))) return false
+      // Pair calls block while the programmer watches and replies, far past OMP's 30s MCP default.
+      return entry.timeout === 0
+    },
+    async setUp(host, command) {
+      const file = ompFile(host)
+      if (!exists(file)) {
+        write(file, `{\n  "$schema": "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json"\n}\n`)
+      }
+      editJson(file, ["mcpServers", SERVER], { type: "stdio", command, args: [], enabled: true, timeout: 0 })
+      const data = readJson(file)
+      if (Array.isArray(data?.disabledServers) && data.disabledServers.includes(SERVER)) {
+        editJson(file, ["disabledServers"], data.disabledServers.filter((name: unknown) => name !== SERVER))
+      }
+      return file
+    },
+  },
+  {
     id: "claude",
     label: "Claude Code",
     detect: (host) => !!which(host, "claude", [path.join(host.home, ".local", "bin")]) || exists(claudeFile(host)),
@@ -123,6 +151,25 @@ function geminiFile(host: Host): string {
 
 function cursorFile(host: Host): string {
   return path.join(host.home, ".cursor", "mcp.json")
+}
+
+/**
+ * OMP's own MCP file: in its agent folder, which `PI_CODING_AGENT_DIR` moves, and a named
+ * profile (`OMP_PROFILE`) keeps apart from the default one.
+ */
+export function ompFile(host: Host): string {
+  if (host.env.PI_CODING_AGENT_DIR) return path.join(host.env.PI_CODING_AGENT_DIR, "mcp.json")
+  const profile = host.env.OMP_PROFILE || host.env.PI_PROFILE
+  const dir =
+    profile && !profile.includes("/") && !profile.includes("\\") && profile !== ".."
+      ? path.join(host.home, ".omp", "profiles", profile, "agent")
+      : path.join(host.home, ".omp", "agent")
+  return path.join(dir, "mcp.json")
+}
+
+/** The `omp` program: on the PATH, or where its installers put it off the PATH. */
+export function findOmp(host: Host): string | undefined {
+  return which(host, "omp", [path.join(host.home, ".local", "bin"), path.join(host.home, ".bun", "bin")])
 }
 
 // ---- Programs --------------------------------------------------------------

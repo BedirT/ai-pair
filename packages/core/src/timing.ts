@@ -19,12 +19,24 @@ export type Cadence = {
 
 export type Reading = { msPerWord: number; minMs: number; maxMs: number }
 
+/** How a spoken `say` paces playback, when a voice is on. */
+export type VoiceTiming = {
+  /** A `say` longer than this many words gets the floor: typing waits until it has been spoken. */
+  longWords: number
+  /** A short `say` only holds playback this long; the rest is spoken over the typing that follows. */
+  shortMs: number
+  /** How long a word takes to say, for the panel's progress ring while a long `say` is spoken. */
+  msPerWord: number
+}
+
 export type Timing = {
   type: Cadence
   /** `type_fast` plays the same cadence, with every delay multiplied by this. */
   fastFactor: number
   /** After a `say`: enough to read the message at an ordinary pace. */
   reading: Reading
+  /** After a spoken `say`: how the voice and the typing fit together. */
+  voice: VoiceTiming
   /** Before a move, so the jump doesn't look instantaneous. */
   beforeMoveMs: number
   /** After a move nearby, and after `type` steps back between its parts: the eyes find the cursor again. */
@@ -53,6 +65,7 @@ export const defaultTiming: Timing = {
   },
   fastFactor: 0.25,
   reading: { msPerWord: 270, minMs: 1500, maxMs: 9000 },
+  voice: { longWords: 14, shortMs: 350, msPerWord: 380 },
   beforeMoveMs: 150,
   afterMoveNearMs: 450,
   afterMoveFarMs: 900,
@@ -63,9 +76,10 @@ export const defaultTiming: Timing = {
   afterPointMs: 400,
 }
 
-export type TimingOverrides = Partial<Omit<Timing, "type" | "reading">> & {
+export type TimingOverrides = Partial<Omit<Timing, "type" | "reading" | "voice">> & {
   type?: Partial<Cadence>
   reading?: Partial<Reading>
+  voice?: Partial<VoiceTiming>
 }
 
 export function withOverrides(base: Timing, overrides: TimingOverrides): Timing {
@@ -74,5 +88,6 @@ export function withOverrides(base: Timing, overrides: TimingOverrides): Timing 
     ...overrides,
     type: { ...base.type, ...overrides.type },
     reading: { ...base.reading, ...overrides.reading },
+    voice: { ...base.voice, ...overrides.voice },
   }
 }

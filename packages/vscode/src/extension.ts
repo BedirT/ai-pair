@@ -5,10 +5,11 @@ import { discoveryDir } from "@ai-pair/protocol"
 import { playDemo } from "./demo"
 import { VsCodeEditor } from "./editor"
 import { NarrationPanel } from "./panel"
+import { OmpHost } from "./omp"
 import { registerServerProvider, setUpAgent, writeLauncher } from "./setup"
-
+import { VoiceEngine } from "./voice"
 /** Returned from `activate`, for integration tests. */
-export type Api = { controller: Controller; playDemo: () => Promise<void>; launcher: string; ready: Promise<void> }
+export type Api = { controller: Controller; playDemo: () => Promise<void>; launcher: string; ready: Promise<void>; omp: OmpHost }
 
 export function activate(context: vscode.ExtensionContext): Api {
   const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir()
@@ -38,6 +39,28 @@ export function activate(context: vscode.ExtensionContext): Api {
   const ready = bridge.start()
   ready.catch((e: unknown) => void vscode.window.showErrorMessage(`AI Pair couldn't start its local server: ${String(e)}`))
   const launcher = writeLauncher(context.extensionPath)
+  const omp = new OmpHost(panel, {
+    launcher,
+    root: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+    config: () => ({ path: config().get("omp.path", ""), model: config().get("omp.model", "") }),
+    isPairActive: () => controller.isActive,
+  })
+  panel.omp = omp
+  const voice = new VoiceEngine(panel, {
+    extensionPath: context.extensionPath,
+    config: () => ({
+      enabled: config().get("voice.enabled", false),
+      voice: config().get("voice.voice", "af_heart"),
+      rate: config().get("voice.rate", 1),
+      runtimePath: config().get("voice.runtimePath", ""),
+      ompPath: config().get("omp.path", ""),
+    }),
+    setEnabled: (on) => void config().update("voice.enabled", on, vscode.ConfigurationTarget.Global),
+    setVoice: (id) => void config().update("voice.voice", id, vscode.ConfigurationTarget.Global),
+  })
+  panel.voice = voice
+  controller.setVoice(voice)
+  if (config().get("voice.enabled", false)) voice.setEnabled(true)
   registerServerProvider(context)
 
   context.subscriptions.push(
@@ -47,6 +70,15 @@ export function activate(context: vscode.ExtensionContext): Api {
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => bridge.writeDiscovery()),
     vscode.commands.registerCommand("aiPair.setUpAgent", () => setUpAgent(launcher)),
+    vscode.commands.registerCommand("aiPair.startOmp", () => omp.start()),
+    vscode.commands.registerCommand("aiPair.stopOmp", () => omp.stop()),
+    vscode.commands.registerCommand("aiPair.abortOmp", () => omp.abort()),
+    vscode.commands.registerCommand("aiPair.newOmpChat", () => omp.newChat()),
+    vscode.commands.registerCommand("aiPair.selectOmpModel", () => omp.pickModel()),
+    vscode.commands.registerCommand("aiPair.toggleVoice", () => voice.toggle()),
+    vscode.commands.registerCommand("aiPair.selectVoice", () => voice.pickVoice()),
+    omp,
+    voice,
     editor,
     vscode.window.registerWebviewViewProvider(NarrationPanel.viewId, panel, {
       webviewOptions: { retainContextWhenHidden: true },
@@ -61,6 +93,8 @@ export function activate(context: vscode.ExtensionContext): Api {
       if (e.affectsConfiguration("aiPair.confirmCommands")) {
         controller.setConfirmCommands(config().get("confirmCommands", true))
       }
+      if (e.affectsConfiguration("aiPair.voice.enabled")) voice.setEnabled(config().get("voice.enabled", false), true)
+      if (e.affectsConfiguration("aiPair.voice.voice")) panel.showVoiceStatus(voice.status())
     }),
     vscode.commands.registerCommand("aiPair.playDemo", () => {
       if (!vscode.workspace.workspaceFolders?.length) {
@@ -90,7 +124,7 @@ export function activate(context: vscode.ExtensionContext): Api {
       .then((answer) => answer && setUpAgent(launcher))
   }
 
-  return { controller, playDemo: () => playDemo(controller, root), launcher, ready }
+  return { controller, playDemo: () => playDemo(controller, root), launcher, ready, omp }
 }
 
 export function deactivate(): void {}
