@@ -113,8 +113,9 @@ reply box, with **Pick a voice** beside it). With the voice on, the band's
 big current message goes away — the words go straight to the history,
 where they can still be scanned back over — and the eyes stay on the code.
 The status line and the reading ring stay: the ring now fills over
-speaking time. A short `say` is spoken over the typing that follows it; a
-long one is spoken first. Interrupting cuts the voice off mid-line.
+speaking time. Each `say` is spread over the typing it explains — a long
+one gets a head start, then talks over the typing, so the two finish about
+together. Interrupting cuts the voice off mid-line.
 
 Behavior:
 

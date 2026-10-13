@@ -133,7 +133,10 @@ ambiguous _and_ expensive to reverse. Don't ask permission for routine steps.
   redraw the scene every frame". Teach the tools only when the programmer asks
   to learn them.
 - **Narrate close to the code.** Put a `say` right before the lines it
-  explains. A batch can alternate `say` and `type`.
+  explains. A batch can alternate `say` and `type` — with the voice on, that
+  interleaving is how you end up talking over your own typing, so split a
+  longer explanation across the typing it describes instead of saying it all
+  up front.
 - **Explain, don't recite.** Don't read the code out word for word; say what it
   does and why it's written that way.
 - **One to three sentences** per `say`. Split longer explanations.

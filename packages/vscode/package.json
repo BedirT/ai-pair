@@ -233,7 +233,7 @@
           "type": "boolean",
           "default": false,
           "scope": "application",
-          "markdownDescription": "Hear the agent instead of reading it: each thing it says is spoken on this machine (Kokoro, the local speech model OMP ships; the first turn-on may download it, about 100 MB of model in a few hundred MB of runtime). The words still land in the panel's history. Short lines talk over the typing; a long one is spoken first."
+          "markdownDescription": "Hear the agent instead of reading it: each thing it says is spoken on this machine (Kokoro, the local speech model OMP ships; the first turn-on may download it, about 100 MB of model in a few hundred MB of runtime). The words still land in the panel's history. The words are spread over the typing they explain, so talking and typing run together."
         },
         "aiPair.voice.voice": {
           "type": "string",

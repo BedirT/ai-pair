@@ -21,11 +21,16 @@ export type Reading = { msPerWord: number; minMs: number; maxMs: number }
 
 /** How a spoken `say` paces playback, when a voice is on. */
 export type VoiceTiming = {
-  /** A `say` longer than this many words gets the floor: typing waits until it has been spoken. */
+  /** How long typing waits for the voice to begin, before it goes on under the talking. */
+  leadMs: number
+  /**
+   * The most typing waits when a `say` runs much longer than the work it covers: that much is
+   * spoken first, the rest talks over the typing and into whatever follows.
+   */
+  maxLeadMs: number
+  /** A trailing `say` — no work after it in its batch — longer than this many words is spoken in full before playback goes on. */
   longWords: number
-  /** A short `say` only holds playback this long; the rest is spoken over the typing that follows. */
-  shortMs: number
-  /** How long a word takes to say, for the panel's progress ring while a long `say` is spoken. */
+  /** How long a word takes to say, for pacing speech against the typing it covers. */
   msPerWord: number
 }
 
@@ -65,7 +70,7 @@ export const defaultTiming: Timing = {
   },
   fastFactor: 0.25,
   reading: { msPerWord: 270, minMs: 1500, maxMs: 9000 },
-  voice: { longWords: 14, shortMs: 350, msPerWord: 380 },
+  voice: { leadMs: 350, maxLeadMs: 4000, longWords: 14, msPerWord: 380 },
   beforeMoveMs: 150,
   afterMoveNearMs: 450,
   afterMoveFarMs: 900,

@@ -152,11 +152,13 @@ export class FakePanel implements PanelPort {
 export class FakeVoice implements VoicePort {
   ready = true
   spoken: string[] = []
+  spans: Array<number | undefined> = []
   stops = 0
   private finishers: Array<() => void> = []
 
-  speak(text: string): Promise<void> {
+  speak(text: string, spanMs?: number): Promise<void> {
     this.spoken.push(text)
+    this.spans.push(spanMs)
     return new Promise<void>((resolve) => this.finishers.push(resolve))
   }
   finish(): void {
@@ -175,7 +177,7 @@ export const testConfig: Config = {
     type: { charMs: 100, jitter: 0.25, wordStartMs: 0, punctuationMs: 0, openBracketMs: 0, newlineMs: 0 },
     fastFactor: 0.1,
     reading: { msPerWord: 100, minMs: 500, maxMs: 2000 },
-    voice: { longWords: 3, shortMs: 10, msPerWord: 100 },
+    voice: { leadMs: 10, maxLeadMs: 5000, longWords: 3, msPerWord: 100 },
     beforeMoveMs: 100,
     afterMoveNearMs: 0,
     afterMoveFarMs: 0,

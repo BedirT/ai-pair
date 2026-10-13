@@ -12,8 +12,10 @@
 - **AI Pair: Set Up Agent** can also connect an OMP you run yourself.
 - **The agent can talk.** Turn **Voice** on in the Pair panel and everything
   it says is spoken while it works, with Kokoro: a speech model that runs on
-  your own machine, so nothing leaves it to be said. Short lines talk over
-  the typing; a long one is spoken first; interrupting cuts it off. The big
+  your own machine, so nothing leaves it to be said. The words are spread
+  over the typing they explain — a long one gets a head start, then talks
+  over the typing, so the two finish about together; interrupting cuts it
+  off. The big
   text in the panel goes away while the voice is on — your eyes stay on the
   code — and the words still land in the history. **Pick a voice** chooses
   whose it is. The first turn-on may download the model once. New settings:

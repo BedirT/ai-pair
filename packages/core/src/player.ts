@@ -10,6 +10,7 @@ import type { LineIds, Sighting } from "./lines"
 import type { Change, EditorPort, Focus, PanelPort, VoicePort } from "./ports"
 import { fileLines, isLineStart, lineEnd, lineText, position } from "./text"
 import type { Pacing } from "./timeline"
+import type { Timing } from "./timing"
 import { planTyping, readingTime, wordCount } from "./typing"
 
 /** What playback reads and changes. */
@@ -219,7 +220,7 @@ export class Player {
       if (this.stage.pacing.isInterrupted) return this.stopped(id, actions.slice(i), i > 0)
       let outcome: Outcome
       try {
-        outcome = await this.perform(actions[i]!, playing)
+        outcome = await this.perform(actions[i]!, playing, actions.slice(i + 1))
       } catch (e) {
         outcome = fail("invalid_action", e instanceof Error ? e.message : String(e))
       }
@@ -258,7 +259,32 @@ export class Player {
     return this.stage.pacing.sleep(ms / this.stage.speed())
   }
 
-  private async perform(action: Action, playing: Playing): Promise<Outcome> {
+  /**
+   * About how long the actions after a `say`, up to the next one, will take to play, in
+   * normal-speed milliseconds: the span its words are spread across. A `run` counts as no
+   * time — how long a command takes is anyone's guess, and speech rides over it either way.
+   */
+  private coverage(rest: Action[], timing: Timing): number {
+    let ms = 0
+    for (const action of rest) {
+      if ("say" in action) break
+      if ("type" in action || "type_fast" in action) {
+        const fast = "type_fast" in action
+        const text: unknown = fast ? action.type_fast : action.type
+        if (typeof text !== "string") continue
+        const scale = fast ? timing.fastFactor : 1
+        const chunks = planTyping(text.replace(CURSOR_MARKER, ""), timing.type, false, () => 0.5, scale)
+        for (const chunk of chunks) ms += chunk.delay
+        if (text.includes(CURSOR_MARKER) && !text.endsWith(CURSOR_MARKER)) ms += (timing.beforeMoveMs + timing.afterMoveNearMs) * scale
+      } else if ("move" in action) ms += timing.beforeMoveMs + timing.afterMoveNearMs
+      else if ("select" in action) ms += timing.beforeSelectMs + timing.afterSelectMs
+      else if ("delete" in action) ms += timing.afterDeleteMs
+      else if ("point" in action) ms += timing.afterPointMs
+    }
+    return ms
+  }
+
+  private async perform(action: Action, playing: Playing, rest: Action[] = []): Promise<Outcome> {
     const s = this.scene
     const { editor, panel } = this.stage
     const timing = this.stage.config().timing
@@ -293,13 +319,21 @@ export class Player {
       const voice = this.stage.voice?.()
       if (voice) {
         const words = wordCount(action.say)
-        const spokenMs = (words * timing.voice.msPerWord) / this.stage.speed()
-        panel.post({ type: "reading", ms: spokenMs })
+        const speechMs = words * timing.voice.msPerWord
+        const spanMs = this.coverage(rest, timing) / this.stage.speed()
+        panel.post({ type: "reading", ms: speechMs })
         this.stage.render()
-        const spoken = voice.speak(action.say).catch(() => {})
-        // A long say gets the floor; a short one talks over the typing that follows.
-        if (words > timing.voice.longWords) await spoken
-        else await this.stage.pacing.sleep(timing.voice.shortMs / this.stage.speed())
+        const spoken = voice.speak(action.say, spanMs).catch(() => {})
+        if (spanMs <= 0) {
+          // Nothing to talk over: a long trailing say is heard out, a short one is left sounding.
+          if (words > timing.voice.longWords) await spoken
+          else await this.stage.pacing.sleep(timing.voice.leadMs)
+        } else {
+          // Duplex: let the voice get ahead by however much it outruns the typing it covers
+          // (capped), then type under it, so talking and typing end about together.
+          const lead = Math.min(Math.max(timing.voice.leadMs, speechMs - spanMs), timing.voice.maxLeadMs)
+          await this.stage.pacing.sleep(lead)
+        }
         this.reading = false
         this.stage.render()
         return ok

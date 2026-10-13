@@ -60,7 +60,7 @@ describe("timing", () => {
     expect(editor.text("a.ts")).toBe("abc")
   })
 
-  it("speaks a short say over the typing that follows it", async () => {
+  it("speaks a say over the typing it covers, telling the voice how long that typing takes", async () => {
     const { editor, controller } = setup({ "a.ts": "" })
     const voice = new FakeVoice()
     controller.setVoice(voice)
@@ -68,26 +68,36 @@ describe("timing", () => {
     await controller.step([{ move: { file: "a.ts", line: 1, to: "line_end" } }, { say: "one two" }, { type: "ab▌" }])
     await advance(1000)
     expect(voice.spoken).toEqual(["one two"])
+    expect(voice.spans).toEqual([200]) // two characters at 100 ms each
     // The words are still being said, and the typing went ahead under them.
     expect(editor.text("a.ts")).toBe("ab")
     voice.finish()
   })
 
-  it("gives a long say the floor, and an interrupt cuts it off", async () => {
+  it("lets a long say get ahead, then types under it; a trailing long say is heard out", async () => {
     const { editor, controller } = setup({ "a.ts": "" })
     const voice = new FakeVoice()
     controller.setVoice(voice)
     await controller.start()
-    await controller.step([
-      { move: { file: "a.ts", line: 1, to: "line_end" } },
-      { say: "one two three four five" },
-      { type: "ab▌" },
-    ])
-    await advance(2000)
+    const twenty = Array.from({ length: 20 }, () => "word").join(" ")
+    await controller.step([{ move: { file: "a.ts", line: 1, to: "line_end" } }, { say: twenty }, { type: "ab▌" }])
+    // The say needs 2000 ms, its typing only 200: most of the gap is spoken first…
+    await advance(1200)
     expect(editor.text("a.ts")).toBe("")
-    voice.finish()
-    await advance(1000)
+    // …then the typing runs under the rest of the talking.
+    await advance(1200)
     expect(editor.text("a.ts")).toBe("ab")
+    voice.finish()
+    await until(controller.step([]))
+
+    // Nothing follows this say, so its batch waits for the last word.
+    await controller.step([{ say: "one two three four five" }])
+    const after = track(controller.step([]))
+    await advance(2000)
+    expect(after.done).toBe(false)
+    voice.finish()
+    await advance(100)
+    expect(after.done).toBe(true)
 
     await controller.step([{ say: "one two three four five" }, { type: "c▌" }])
     await advance(100)

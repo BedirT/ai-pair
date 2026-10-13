@@ -1,7 +1,7 @@
 // The speech queue: sentences in order, made ahead, dropped when stale, cut off on stop.
 // Making and playing are fakes whose promises the test settles; no real waits.
 
-import { expect, it } from "vitest"
+import { expect, it, vi } from "vitest"
 import { SpeechQueue } from "../src/voiceQueue"
 import { splitSentences, spokenText } from "../src/voiceText"
 
@@ -9,14 +9,16 @@ type Settler = { resolve: () => void }
 
 function fakeBackend() {
   const made: string[] = []
+  const speeds: number[] = []
   const played: string[] = []
   const released: string[] = []
   const synths = new Map<string, Settler>()
   const plays = new Map<string, Settler>()
   let stopped = 0
   const backend = {
-    synth: (text: string) => {
+    synth: (text: string, speedScale: number) => {
       made.push(text)
+      speeds.push(speedScale)
       return new Promise<string>((resolve) => synths.set(text, { resolve: () => resolve(text) }))
     },
     play: (token: string) => {
@@ -37,7 +39,7 @@ function fakeBackend() {
     await Promise.resolve()
     await Promise.resolve()
   }
-  return { backend, made, played, released, settleSynth, settlePlay, tick, stops: () => stopped }
+  return { backend, made, speeds, played, released, settleSynth, settlePlay, tick, stops: () => stopped }
 }
 
 it("makes the next sentence while the last one plays, in order", async () => {
@@ -87,6 +89,31 @@ it("drops the oldest waiting lines when speech falls behind", async () => {
   expect(queue.waiting).toBeLessThanOrEqual(6)
   expect(settled).toBeGreaterThan(0) // the dropped ones settled without a sound
   queue.stop()
+})
+
+it("spreads sentences across the span they cover, a touch slower and with pauses", async () => {
+  vi.useFakeTimers()
+  try {
+    const f = fakeBackend()
+    const queue = new SpeechQueue<string>(f.backend)
+    // Two 3-word sentences: about 2280 ms of talk for 6000 ms of typing.
+    const done = queue.speak("One two three. Four five six.", 6000)
+    expect(f.speeds[0]).toBeCloseTo(0.85) // as slow as still sounds right
+    f.settleSynth("One two three.")
+    await f.tick()
+    expect(f.played).toEqual(["One two three."])
+    f.settlePlay("One two three.")
+    f.settleSynth("Four five six.")
+    await f.tick()
+    // The second sentence waits out its share of the typing before it sounds.
+    expect(f.played).toEqual(["One two three."])
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(f.played).toEqual(["One two three.", "Four five six."])
+    f.settlePlay("Four five six.")
+    await done
+  } finally {
+    vi.useRealTimers()
+  }
 })
 
 it("cleans words for the ear and splits them to be spoken", () => {

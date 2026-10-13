@@ -97,11 +97,13 @@ export interface PanelPort {
 /**
  * The agent's voice, when there is one: it speaks a `say` out loud instead of leaving it to be read.
  * `speak` settles when the words have been spoken, or dropped, or stopped; it never rejects playback.
+ * `spanMs` is how long the work the `say` covers will take to play: spread the words across it, so
+ * talking and typing run together and finish about together.
  */
 export interface VoicePort {
   /** Loaded and able to speak now. Not ready, playback falls back to the reading pause. */
   readonly ready: boolean
-  speak(text: string): Promise<void>
+  speak(text: string, spanMs?: number): Promise<void>
   /** Cuts off what is being said and drops what is queued: interrupted words are stale words. */
   stop(): void
 }

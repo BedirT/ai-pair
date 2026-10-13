@@ -90,8 +90,10 @@ when it's just said something and is waiting for you to read it — or, with the
 voice on, while it says it.
 
 **Hear it instead of reading it.** Turn **Voice** on in the Pair panel and
-everything the agent says is spoken as it works: a short line talks over the
-typing that follows, a long one is spoken first. The big text in the panel
+everything the agent says is spoken as it works: the words are spread over
+the typing they explain — a long explanation gets a head start, then talks
+over the typing, so the talking and the typing finish about together. The
+big text in the panel
 goes away, so there's only one thing to watch — the code. The words still
 land in the panel's history. The voice is **Kokoro**, a speech model that
 runs on your own machine (the one OMP ships), so nothing is sent anywhere to

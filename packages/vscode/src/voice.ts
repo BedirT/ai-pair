@@ -112,8 +112,8 @@ export class VoiceEngine implements VoicePort, VoicePanelPort {
     })()
   }
 
-  speak(text: string): Promise<void> {
-    return this.queue && this.ready ? this.queue.speak(text) : Promise.resolve()
+  speak(text: string, spanMs?: number): Promise<void> {
+    return this.queue && this.ready ? this.queue.speak(text, spanMs ?? 0) : Promise.resolve()
   }
 
   stop(): void {
@@ -138,7 +138,7 @@ export class VoiceEngine implements VoicePort, VoicePanelPort {
     if (!this.on) return
     if (warmed) {
       this.queue = new SpeechQueue<string>({
-        synth: (text) => this.synth(text),
+        synth: (text, speedScale) => this.synth(text, speedScale),
         play: (file) => this.play(file),
         stopPlaying: () => this.player?.kill("SIGTERM"),
         release: (file) => fs.rm(file, { force: true }, () => {}),
@@ -239,14 +239,14 @@ export class VoiceEngine implements VoicePort, VoicePanelPort {
     return path.join(os.tmpdir(), `ai-pair-voice-${process.pid}-${id}.wav`)
   }
 
-  private synth(text: string): Promise<string> {
+  private synth(text: string, speedScale: number): Promise<string> {
     const child = this.worker
     if (!child?.stdin?.writable) return Promise.reject(new Error("The voice isn't running."))
     const id = ++this.seq
     const { voice, rate } = this.options.config()
     return new Promise<string>((resolve, reject) => {
       this.synths.set(id, { resolve, reject })
-      child.stdin!.write(`${JSON.stringify({ id, text, voice, speed: rate, out: this.outPath(id) })}\n`)
+      child.stdin!.write(`${JSON.stringify({ id, text, voice, speed: rate * speedScale, out: this.outPath(id) })}\n`)
     })
   }
 

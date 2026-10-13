@@ -184,11 +184,16 @@ the editor, as above.
 
 A `say` can be spoken instead of only shown. The player asks its stage for a
 voice ([`VoicePort`](packages/core/src/ports.ts)); without one it keeps the
-reading pause. With one, a short `say` holds playback only briefly and is
-spoken over the typing that follows, while a long one (over
-`timing.voice.longWords`) is awaited — through the same `speak` promise,
-which interruptions settle by stopping the voice. Rehearsals never get a
-voice: they are silent.
+reading pause. With one, talking and typing run together: the player
+measures how long the actions a `say` covers will take to play (up to the
+next `say`) and hands that span to `speak`, and the voice spreads its
+sentences across it — a touch slower or faster, with pauses between
+sentences. If the words need longer than the typing, playback waits out
+the difference first (`timing.voice.maxLeadMs` caps the wait), so talking
+and typing finish about together; a long `say` with nothing after it (over
+`timing.voice.longWords`) is heard out in full. Interruptions settle the
+`speak` promise by stopping the voice. Rehearsals never get a voice: they
+are silent.
 
 The voice itself is **Kokoro**, the local speech model OMP ships, kept warm
 in a small worker process ([`voiceWorker.ts`](packages/vscode/src/voiceWorker.ts),
