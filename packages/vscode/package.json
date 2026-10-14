@@ -100,6 +100,16 @@
         "category": "AI Pair"
       },
       {
+        "command": "aiPair.toggleTypingSounds",
+        "title": "Toggle Typing Sounds",
+        "category": "AI Pair"
+      },
+      {
+        "command": "aiPair.selectTypingSound",
+        "title": "Select Typing Sound Switch",
+        "category": "AI Pair"
+      },
+      {
         "command": "aiPair.playDemo",
         "title": "Play Demo Session",
         "category": "AI Pair"
@@ -200,7 +210,7 @@
           "default": 1,
           "minimum": 0.25,
           "maximum": 4,
-          "description": "Overall playback speed: typing, pauses, and reading time. The panel's speed menu offers 0.4× to 3×."
+          "description": "Overall playback speed: typing, pauses, and reading time, and the voice's pace up to 2× (slower than 1×, the voice keeps its own pace and pauses more). The panel's speed menu offers 0.4× to 3×."
         },
         "aiPair.agentName": {
           "type": "string",
@@ -218,11 +228,25 @@
           "scope": "application",
           "markdownDescription": "Ask in the Pair panel before running each command the agent plays in the terminal (`run`). Turning this off lets the agent run commands without its own permission prompt."
         },
+        "aiPair.workAheadBatches": {
+          "type": "integer",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 10,
+          "markdownDescription": "How many batches the agent may write ahead of what you're watching. It then plays without pausing to think between batches. When you step in, what it wrote ahead is dropped, so more means more thrown away. `0` makes it wait for each batch to finish."
+        },
         "aiPair.omp.path": {
           "type": "string",
           "default": "",
           "scope": "machine",
           "description": "Path to the omp program the Pair panel starts. Empty finds omp on the PATH, in ~/.local/bin, or in ~/.bun/bin."
+        },
+        "aiPair.omp.thinking": {
+          "type": "string",
+          "default": "",
+          "enum": ["", "off", "minimal", "low", "medium", "high", "xhigh", "max"],
+          "enumDescriptions": ["OMP's own default", "No thinking: fastest, weakest plans", "Barely any", "Quick: good for most pairing", "Balanced", "Careful: noticeable waits", "Slow", "Deepest: slowest, long silences between batches"],
+          "markdownDescription": "How hard the panel's OMP thinks before each move. Less thinking means shorter waits between batches while you pair; `low` or `medium` suit most sessions. Empty uses OMP's own setting. Takes effect when OMP is next started."
         },
         "aiPair.omp.model": {
           "type": "string",
@@ -233,7 +257,17 @@
           "type": "boolean",
           "default": false,
           "scope": "application",
-          "markdownDescription": "Hear the agent instead of reading it: each thing it says is spoken on this machine (Kokoro, the local speech model OMP ships; the first turn-on may download it, about 100 MB of model in a few hundred MB of runtime). The words still land in the panel's history. The words are spread over the typing they explain, so talking and typing run together."
+          "markdownDescription": "Hear the agent instead of reading it: each thing it says is spoken on this machine, by the speech model in `aiPair.voice.model`. The words still land in the panel's history. The words are spread over the typing they explain, so talking and typing run together."
+        },
+        "aiPair.voice.model": {
+          "type": "string",
+          "default": "kokoro",
+          "enum": ["kokoro", "chatterbox"],
+          "enumDescriptions": [
+            "Kokoro, the light local speech model OMP ships. Works everywhere; the first turn-on may download it, about 100 MB of model in a few hundred MB of runtime.",
+            "Chatterbox Turbo by Resemble AI: more natural, on Apple Silicon Macs only, run by uv. The first turn-on fetches about 1.3 GB."
+          ],
+          "markdownDescription": "Which speech model talks. The panel's Pick a voice changes it."
         },
         "aiPair.voice.voice": {
           "type": "string",
@@ -241,18 +275,53 @@
           "enum": ["af_heart", "af_bella", "af_nicole", "af_aoede", "af_kore", "af_sarah", "am_michael", "am_fenrir", "am_puck", "bf_emma", "bm_george", "bm_fable"],
           "description": "Whose Kokoro voice the agent speaks with. The panel's Pick a voice changes it."
         },
+        "aiPair.voice.chatterboxVoice": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "A recording Chatterbox speaks like: 10 seconds or more of one person speaking clearly, who agreed to be copied. Empty is Chatterbox's own voice. The panel's Pick a voice changes it."
+        },
         "aiPair.voice.rate": {
           "type": "number",
           "default": 1,
           "minimum": 0.5,
           "maximum": 2,
-          "description": "How fast the voice talks: 1 is its own pace."
+          "description": "How fast the voice talks, on top of the playback speed: 1 is its own pace."
         },
         "aiPair.voice.runtimePath": {
           "type": "string",
           "default": "",
           "scope": "machine",
           "description": "Path to a bun or node program to run the voice process with (VS Code's own runtime cannot load the speech engine). Empty finds bun, then node, in the usual places."
+        },
+        "aiPair.typingSounds.enabled": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "markdownDescription": "Hear the agent's keystrokes as a mechanical keyboard while it types: recordings of a real switch (`aiPair.typingSounds.switch`), a press and a release per key. Kept well under the voice, and quieter still while the voice talks. The Pair panel plays them, so it needs to have been opened, and clicked once, before they sound."
+        },
+        "aiPair.typingSounds.volume": {
+          "type": "number",
+          "default": 0.5,
+          "minimum": 0,
+          "maximum": 1,
+          "scope": "application",
+          "description": "How loud the typing sounds are, from 0 (silent) to 1. Even 1 stays under the voice."
+        },
+        "aiPair.typingSounds.switch": {
+          "type": "string",
+          "default": "holypanda",
+          "enum": ["holypanda", "cream", "alpaca", "mxbrown", "topre", "buckling"],
+          "enumDescriptions": [
+            "Holy Panda: tactile, a deep and rounded thock.",
+            "NovelKeys Cream: linear, smooth and creamy.",
+            "Alpaca: linear, soft and quiet, a light clack.",
+            "Cherry MX Brown: the classic tactile office board.",
+            "Topre: soft, muted, cushioned.",
+            "Buckling Spring: the IBM Model M, loud and crisp."
+          ],
+          "scope": "application",
+          "description": "Which switch the typing sounds are recorded from. The arrow by Key sounds in the Pair panel plays each one so you can choose by ear."
         }
       }
     },

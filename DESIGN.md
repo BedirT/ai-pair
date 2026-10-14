@@ -54,6 +54,13 @@ Layout, top to bottom:
      give way to Hand back, the one labeled control, since it's the main
      action then. The speed opens a menu of 0.4× to 3.0×. The agent's color
      is on the dot only, never on the controls.
+     The words say what the wait is: while the agent thinks, the dot
+     breathes and a clock counts (_Agent is thinking · 8s_, and _no word from
+     it yet_ past a minute and a half), so a long think reads as work and a
+     stuck agent as stuck — with OMP, what it's doing replaces _Agent is
+     thinking_ while it reads or searches (_Reading hello file · 3s_); while
+     it plays, how many batches are written and ready behind this one, and
+     _writing more_ while the agent is at it.
    - **The current message**, in large text (≈1.3× the editor font,
      _tunable_), high contrast. Its **top edge is fixed**, right under the
      header; its height grows downward with the message length. A new message
@@ -78,9 +85,19 @@ Layout, top to bottom:
 Without a session, the band has no header: it says there's no session and
 how to start one, and after a session, how it ended, with the agent's
 summary. This is also where OMP lives when it's the panel's own agent: a
-**Start OMP** button, then, once it's running, its state and model in a few
-words with Stop, New chat and Model beside them, and the reply box under
-them. Its words go to the history as the agent's messages — streaming in
+**Start OMP** button, then, once it's running, a header like the session's —
+a dot (green when ready, breathing while it works), _OMP_ and its state, and
+icon buttons for New chat, Stop (only while it works) and Turn off — with
+its model as a pill under it that opens the model picker, and beside it a
+thinking chip (_Max_, _Low_, …) that opens a menu of the levels that model
+offers, changeable at any point, even mid-session, since how long the agent
+thinks is how long the editor waits between batches. With another agent the
+chip is greyed and says its level is set in its own app. The reply box sits
+below. Under a hairline, a _Sound_ row holds the Voice toggle (with the voice
+picker joined to it) and the Key sounds toggle (with the switch picker
+joined to it), each showing on or off;
+words appear beside them only when something needs saying, like the voice
+loading or failing. Its words go to the history as the agent's messages — streaming in
 place — its tool calls as small mono lines, and its stops and starts as
 dividers. In a session none of that shows twice: the narration is its voice,
 and the band looks as it does for any agent.
@@ -100,7 +117,7 @@ side bar's (the band's hairline marks it either way), and some themes set
 `descriptionForeground` to the foreground. High contrast themes get text at
 full strength and their contrast border in place of hairlines. The controls
 are the theme's too: icon buttons hover like its toolbar icons, and Run and
-Allow for session are its primary and secondary buttons, with their hover
+the two Allow buttons are its primary and secondary buttons, with their hover
 colors and borders. Their tooltips are the panel's own, in the theme's hover
 colors, shown after a moment's hover or on keyboard focus, since native
 tooltips show unreliably in a webview. The agent's colors are theme colors too (see Agent
@@ -112,10 +129,27 @@ itself: **Voice** in the band's controls (and, before a session, above the
 reply box, with **Pick a voice** beside it). With the voice on, the band's
 big current message goes away — the words go straight to the history,
 where they can still be scanned back over — and the eyes stay on the code.
-The status line and the reading ring stay: the ring now fills over
-speaking time. Each `say` is spread over the typing it explains — a long
-one gets a head start, then talks over the typing, so the two finish about
-together. Interrupting cuts the voice off mid-line.
+A command waiting to be allowed still shows its box: it's the one thing in
+the band that needs a click. The status line and the reading ring stay: the
+ring now fills over speaking time. Each `say` is spread over the typing it
+explains — a long one gets a head start, then talks over the typing, so the
+two finish about together. Interrupting cuts the voice off mid-line.
+
+**Typing sounds.** A pair at one desk hears the other's keyboard, and it
+tells you work is happening without looking. The keyboard button in the
+band's controls (and **Key sounds** before a session) plays each of the
+agent's keystrokes from recordings of a real switch: a press, then a
+release a moment later; letters by their key's row, space, enter and
+backspace their own; Shift first for a capital or symbol. Each key keeps its
+own slight pitch, as one board's keys do, and is panned to where it sits; a
+word's first stroke lands harder and brighter than the ones inside it, and
+indentation, which lands all at once, is silent. A short room echo puts the
+keyboard on a desk rather than in the ear. The arrow beside **Key sounds**
+chooses among six switches, each typing a few words as the list reaches it,
+so the choice is by ear. It is ambience, never in the way of the words:
+well under the voice at any volume, and stepping back further while the
+voice talks. The panel may only make sound after a click in it, so until
+then the button shows yellow and asks for one.
 
 Behavior:
 
@@ -133,10 +167,17 @@ Behavior:
   selection is sent once. _Ask the Agent About the Selection_ in the editor's
   context menu focuses the reply box.
 - **Commands.** When the agent plays a `run`, the band shows the command under
-  the current message, with **Run**, **Allow for session** (the same command
-  won't ask again until the session ends) and **Skip** (unless
+  the current message, with **Run**, **Allow _program_** (every command of
+  that program, like `npm`, runs without asking until the session ends; shown
+  only for one plain command, since allowing the first program of a chained,
+  piped or redirected one would let the rest through), **Allow all** (every
+  command runs without asking until the session ends) and **Skip** (unless
   `aiPair.confirmCommands` is off), with the cursor in its read state and the
-  status _Needs you_. The
+  status _Needs you: allow the command?_. Nothing plays until the programmer
+  answers, so the question can't be missed: the panel comes into view, the
+  command box pulses, and the voice, if on, asks out loud. Once they answer,
+  the ask is taken back: if it's still queued or sounding, it isn't said, and
+  the agent's other words go on. The
   command then runs in an _AI Pair_ terminal, revealed without taking focus,
   and the history records its exit code.
 - **Space pauses and resumes** while the panel has focus, except in the reply
@@ -191,12 +232,20 @@ the close typed before the cursor leaves it, and the pause after it.
 `type_fast` shortens both by the same factor as its typing. With nothing
 after the `▌`, the cursor is already in place and there's neither.
 
-**Reading.** After a `say`: `clamp(words × 270, 1500, 9000)`. Enough to read
-the message at an ordinary pace, about 220 words a minute.
+**Reading.** A beat's `say`, without a voice, gets
+`clamp(words × 270, 1500, 9000)`: enough to read it at an ordinary pace,
+about 220 words a minute. Its actions start a moment after the words show,
+and the beat lasts as long as the longer of the reading and the work, so a
+short line over a long edit adds no wait, and a long line over a small one
+still gets read.
 
 **Speed.** The panel's speed menu (0.4×, 0.6×, 1.0×, 1.5×, 2.0×, 3.0×) scales
 all of it together, immediately, even mid-typing. It's the `aiPair.speed`
-setting, which takes any value from 0.25 to 4.
+setting, which takes any value from 0.25 to 4. The voice is one of the things
+it scales, so there's one control, not two: with the voice on, typing waits
+for speech, and a faster session with a slow voice wouldn't be faster. The
+voice follows from 1× up to 2×. Slower than 1× it keeps its natural pace,
+since a drawl helps no one; past 2× words blur.
 
 ### Undo
 

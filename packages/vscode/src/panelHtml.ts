@@ -21,6 +21,12 @@ const ICONS = {
   play: svg('<path d="M8 5l11 7-11 7z"/>'),
   speaker: svg('<path d="M11 5L6 9H3v6h3l5 4zM15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/>', "speaker-on"),
   speakerOff: svg('<path d="M11 5L6 9H3v6h3l5 4zM16 9l6 6M22 9l-6 6"/>', "speaker-off"),
+  keyboard: svg('<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6.5 10h1M10.5 10h1M14.5 10h1M18 10h-.5M8 14h8"/>'),
+  plus: svg('<path d="M12 5v14M5 12h14"/>'),
+  power: svg('<path d="M12 3v8M6.3 6.8a8 8 0 1011.4 0"/>'),
+  chevron: svg('<path d="M7 10l5 5 5-5"/>', "chevron"),
+  spark: svg('<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>'),
+  bulb: svg('<path d="M9 18h6M10 21h4M12 3a6 6 0 00-4 10.5c.8.8 1 1.5 1 2.5h6c0-1 .2-1.7 1-2.5A6 6 0 0012 3z"/>'),
 }
 
 export function panelHtml(cspSource: string): string {
@@ -32,7 +38,7 @@ export function panelHtml(cspSource: string): string {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src ${cspSource};">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
   /*
@@ -108,6 +114,7 @@ export function panelHtml(cspSource: string): string {
   .dot { position: relative; width: 7px; height: 7px; margin-left: 4px; border-radius: 50%; background: var(--accent); flex: none; }
   .dot.read { background: var(--read); animation: breathe 2.4s ease-in-out infinite; }
   .dot.dim { opacity: 0.45; }
+  .dot.think { animation: breathe 1.2s ease-in-out infinite; }
   .dot.ring { background: transparent; box-shadow: inset 0 0 0 1.5px var(--accent); }
   .dot.off { background: var(--muted); opacity: 0.45; }
   @keyframes breathe { 50% { opacity: 0.35; } }
@@ -160,7 +167,14 @@ export function panelHtml(cspSource: string): string {
   #run-cmd::before { content: "$ "; color: var(--muted); }
   #run-actions { display: none; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   #run.confirm #run-actions { display: flex; }
+  /* Nothing plays until the programmer answers, so the question can't sit there unseen. */
+  #run.confirm { padding: 10px; border-radius: 8px; animation: ask 1.6s ease-in-out infinite; }
+  @keyframes ask {
+    0%, 100% { box-shadow: 0 0 0 1.5px var(--read); }
+    50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--read) 35%, transparent); }
+  }
   #run-actions button { height: 26px; padding: 0 8px; }
+  #run-actions button[hidden] { display: none; }
 
   body.active #idle { display: none; }
   #idle-title { font-size: 15px; font-weight: 600; }
@@ -168,17 +182,75 @@ export function panelHtml(cspSource: string): string {
   #idle-summary:empty { display: none; }
   #idle-text { margin-top: 4px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 
-  #omp-bar, #voice-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-  #omp-bar button, #voice-bar button { height: 26px; padding: 0 8px; }
+  /* OMP, when it runs in the panel: a header with its state and its few controls, then its model. */
+  #omp-head { display: none; align-items: center; gap: 6px; height: 24px; }
+  body.omp #omp-head { display: flex; }
+  #omp-title { font-size: 15px; font-weight: 600; }
+  #omp-state { flex: 1; min-width: 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #omp-dot { margin-left: 0; margin-right: 2px; }
+  #omp-dot.ready { background: var(--ok); }
+  #omp-dot.busy { animation: breathe 1.2s ease-in-out infinite; }
+  #omp-dot.starting { background: var(--muted); animation: breathe 1.2s ease-in-out infinite; }
+  body:not(.omp-busy) #omp-abort { display: none; }
+  button.chip {
+    height: 22px; max-width: 100%; padding: 0 6px 0 8px; border-radius: 11px; gap: 4px;
+    font-size: 11.5px; color: var(--muted); background: var(--soft);
+  }
+  button.chip:hover:not(:disabled) { background: var(--soft-hover); color: var(--fg); }
+  button.chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button.chip .i { width: 12px; height: 12px; }
+  /* The model and how hard it thinks sit under the reply box, so they can be changed at any
+     point, mid-session too. Another agent's are set in its own app: the level shows, greyed. */
+  #agent-row { display: none; align-items: center; gap: 6px; margin-top: 6px; }
+  body:is(.active, .omp) #agent-row { display: flex; }
+  body:not(.omp) #omp-model { display: none; }
+  /* The level is a short word that must read whole; a long model name gives way to it. */
+  #agent-row #omp-model { min-width: 0; }
+  #think-wrap { position: relative; flex-shrink: 0; }
+  #think-menu {
+    position: absolute; right: 0; bottom: 26px; z-index: 10; padding: 4px; border-radius: 6px;
+    display: flex; flex-direction: column; background: var(--vscode-menu-background, var(--surface));
+    color: var(--vscode-menu-foreground, var(--fg));
+    border: 1px solid var(--vscode-menu-border, var(--border));
+    box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
+  }
+  #think-menu[hidden] { display: none; }
+  #think-menu button { justify-content: flex-start; height: 24px; padding: 0 8px; color: inherit; white-space: nowrap; }
+  #think-menu button[aria-checked="true"] { background: var(--soft-hover); }
+  #think-menu button:hover { background: var(--vscode-menu-selectionBackground, var(--soft)); color: var(--vscode-menu-selectionForeground, inherit); }
+  body.omp #idle-text { margin-top: 8px; }
+  /* With OMP on, its header names the panel; a session's end still gets its own title. */
+  body.omp #idle:not(.ended) #idle-title { display: none; }
+  #omp-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  body.omp #omp-bar { display: none; }
+  #omp-bar button { height: 26px; padding: 0 10px; }
   #omp-status, #voice-status { font-size: 12px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  body.omp #omp-start, body:not(.omp) :is(#omp-stop, #omp-new, #omp-model, #omp-abort) { display: none; }
-  /* With the voice speaking, the band's big words go: the eyes belong on the code. */
-  body.voice #now { display: none; }
+
+  /* Sound: toggles that show their state, set apart from what the agent is doing. */
+  #sound { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--hair); }
+  .seg { display: inline-flex; border-radius: 5px; box-shadow: inset 0 0 0 1px var(--hair); }
+  .seg button { border-radius: 0; }
+  .seg button:first-child { border-radius: 5px 0 0 5px; }
+  .seg button:last-child { border-radius: 0 5px 5px 0; box-shadow: inset 1px 0 0 var(--hair); }
+  button.toggle { height: 24px; padding: 0 8px; color: var(--muted); }
+  button.toggle:hover:not(:disabled) { color: var(--fg); background: var(--vscode-toolbar-hoverBackground, var(--soft)); }
+  button.toggle[aria-pressed="true"] { color: var(--fg); background: var(--vscode-toolbar-hoverBackground, var(--soft)); }
+  :is(#voice-pick, #keys-pick) { padding: 0 4px; }
+  /* Words show only when something needs saying, on a line of their own under the toggles. */
+  #voice-status { flex-basis: 100%; }
+  #voice-status:empty { display: none; }
+  body.keys-blocked #keys-toggle { color: var(--read); }
+  /* With the voice speaking, the band's big words go: the eyes belong on the code. A command
+     stays: allowing it is a button to press, and nothing plays until it's pressed. */
+  body.voice :is(#now-text, #now-ref) { display: none; }
+  body.voice #now:not(:has(#run.on)) { display: none; }
   body:is(.active.voice) #main { min-height: 0; }
-  #voice .speaker-on { display: none; }
-  body.voice-enabled #voice .speaker-on { display: block; }
-  body.voice-enabled #voice .speaker-off { display: none; }
+  :is(#voice, #voice-toggle) .speaker-on { display: none; }
+  body.voice-enabled :is(#voice, #voice-toggle) .speaker-on { display: block; }
+  body.voice-enabled :is(#voice, #voice-toggle) .speaker-off { display: none; }
   body.voice-enabled #voice { color: var(--fg); background: var(--vscode-toolbar-hoverBackground, var(--soft)); }
+  body.typing-sounds #keys { color: var(--fg); background: var(--vscode-toolbar-hoverBackground, var(--soft)); }
+  body.keys-blocked #keys { color: var(--read); }
   .entry.tool { font-family: var(--mono); font-size: 11.5px; color: var(--faint); }
 
   #composer { display: none; margin-top: 12px; }
@@ -246,7 +318,7 @@ export function panelHtml(cspSource: string): string {
   #tip[hidden] { display: none; }
 
   @media (prefers-reduced-motion: reduce) {
-    .dot.read, .arrive { animation: none; }
+    .dot.read, .dot.think, .arrive, #run.confirm { animation: none; }
   }
 </style>
 </head>
@@ -258,11 +330,12 @@ export function panelHtml(cspSource: string): string {
         <div id="status"><span id="dot" class="dot off"></span><span id="status-text">No session</span></div>
         <div id="controls">
           <button id="voice" class="quiet" aria-label="Voice" data-tip="Hear the agent instead of reading it">${ICONS.speaker}${ICONS.speakerOff}</button>
+          <button id="keys" class="quiet" aria-label="Typing sounds" aria-pressed="false" data-tip="Hear the agent's keystrokes">${ICONS.keyboard}</button>
           <button id="pause" class="quiet" aria-label="Pause" data-tip="Pause (Space)" aria-keyshortcuts="Space">${ICONS.pause}${ICONS.resume}</button>
           <button id="interrupt" class="quiet" aria-label="Interrupt" data-tip="Interrupt">${ICONS.stop}</button>
           <button id="turn" class="quiet" aria-label="My turn" data-tip="Take the turn: you drive, the agent navigates">${ICONS.swap}<span id="turn-label">My turn</span></button>
           <div id="speed-wrap">
-            <button id="speed" class="quiet" aria-haspopup="menu" aria-expanded="false" data-tip="Playback speed">1.0×</button>
+            <button id="speed" class="quiet" aria-haspopup="menu" aria-expanded="false" data-tip="Playback speed: the typing, and the voice up to 2×">1.0×</button>
             <div id="speed-menu" role="menu" aria-label="Playback speed" hidden>${speeds}</div>
           </div>
           <button id="end" class="quiet" aria-label="End the session" data-tip="End the session">${ICONS.exit}</button>
@@ -276,26 +349,37 @@ export function panelHtml(cspSource: string): string {
           <div id="run-cmd"></div>
           <div id="run-actions">
             <button id="run-go" class="primary">${ICONS.play}<span>Run</span></button>
-            <button id="run-always" class="soft" data-tip="Run it, and run exactly this command without asking until the session ends">Allow for session</button>
+            <button id="run-program" class="soft"></button>
+            <button id="run-all" class="soft" data-tip="Run it, and every command after it without asking until the session ends">Allow all</button>
             <button id="run-skip" class="quiet">Skip</button>
           </div>
         </div>
       </div>
       <div id="idle">
+        <div id="omp-head">
+          <span id="omp-dot" class="dot"></span>
+          <span id="omp-title">OMP</span>
+          <span id="omp-state"></span>
+          <button id="omp-new" class="quiet" aria-label="New chat" data-tip="New chat: start a fresh conversation">${ICONS.plus}</button>
+          <button id="omp-abort" class="quiet" aria-label="Stop" data-tip="Stop what OMP is doing now">${ICONS.stop}</button>
+          <button id="omp-stop" class="quiet" aria-label="Turn OMP off" data-tip="Turn OMP off">${ICONS.power}</button>
+        </div>
         <div id="idle-title">No active session</div>
         <div id="idle-summary"></div>
         <div id="idle-text">Talk to OMP right here, ask another agent to pair with you, or run <a class="command" data-command="aiPair.playDemo">AI Pair: Play Demo Session</a>. First time? Run <a class="command" data-command="aiPair.setUpAgent">AI Pair: Set Up Agent</a>.</div>
         <div id="omp-bar">
           <button id="omp-start" class="primary">${ICONS.play}<span>Start OMP</span></button>
-          <button id="omp-abort" class="soft" data-tip="Stop what OMP is doing now">${ICONS.stop}<span>Stop</span></button>
-          <button id="omp-new" class="soft" data-tip="Start a fresh OMP conversation">New chat</button>
-          <button id="omp-model" class="soft" data-tip="Choose the model OMP uses">Model</button>
-          <button id="omp-stop" class="quiet" data-tip="Turn OMP off">${ICONS.exit}</button>
           <span id="omp-status"></span>
         </div>
-        <div id="voice-bar">
-          <button id="voice-toggle" class="soft" data-tip="Hear the agent instead of reading it">Voice</button>
-          <button id="voice-pick" class="soft" data-tip="Choose whose voice it is">Pick a voice</button>
+        <div id="sound" role="group" aria-label="Sound">
+          <div class="seg">
+            <button id="voice-toggle" class="toggle" aria-pressed="false">${ICONS.speaker}${ICONS.speakerOff}<span>Voice</span></button>
+            <button id="voice-pick" class="toggle" aria-label="Choose a voice" data-tip="Choose whose voice it is">${ICONS.chevron}</button>
+          </div>
+          <div class="seg">
+            <button id="keys-toggle" class="toggle" aria-pressed="false">${ICONS.keyboard}<span id="keys-label">Key sounds</span></button>
+            <button id="keys-pick" class="toggle" aria-label="Choose a keyboard switch" data-tip="Choose the keyboard: each one plays as you move to it">${ICONS.chevron}</button>
+          </div>
           <span id="voice-status"></span>
         </div>
       </div>
@@ -305,6 +389,13 @@ export function panelHtml(cspSource: string): string {
       <div id="compose-row">
         <textarea id="reply" rows="1" aria-label="Reply to the agent" placeholder="Reply to the agent…"></textarea>
         <button id="send" class="quiet" aria-label="Send" data-tip="Send (Enter)">${ICONS.send}</button>
+      </div>
+      <div id="agent-row">
+        <button id="omp-model" class="chip" data-tip="Choose the model OMP uses">${ICONS.spark}<span id="omp-model-name">Model</span>${ICONS.chevron}</button>
+        <div id="think-wrap">
+          <button id="omp-think" class="chip" aria-haspopup="menu" aria-expanded="false" disabled data-tip="Your agent's thinking level is set in its own app">${ICONS.bulb}<span id="omp-think-name">Thinking</span>${ICONS.chevron}</button>
+          <div id="think-menu" role="menu" aria-label="Thinking level" hidden></div>
+        </div>
       </div>
     </div>
   </section>
@@ -318,18 +409,27 @@ export function panelHtml(cspSource: string): string {
     band: $("band"), dot: $("dot"), status: $("status-text"), pause: $("pause"), interrupt: $("interrupt"),
     turn: $("turn"), turnLabel: $("turn-label"), speed: $("speed"), speedMenu: $("speed-menu"), end: $("end"),
     now: $("now-text"), ref: $("now-ref"),
-    idleTitle: $("idle-title"), idleSummary: $("idle-summary"), idleText: $("idle-text"),
+    idle: $("idle"), idleTitle: $("idle-title"), idleSummary: $("idle-summary"), idleText: $("idle-text"),
     ompStart: $("omp-start"), ompStop: $("omp-stop"), ompAbort: $("omp-abort"), ompNew: $("omp-new"), ompModel: $("omp-model"), ompStatus: $("omp-status"),
+    ompDot: $("omp-dot"), ompState: $("omp-state"), ompModelName: $("omp-model-name"),
+    ompThink: $("omp-think"), ompThinkName: $("omp-think-name"), thinkMenu: $("think-menu"),
     voice: $("voice"), voiceToggle: $("voice-toggle"), voicePick: $("voice-pick"), voiceStatus: $("voice-status"),
+    keys: $("keys"), keysToggle: $("keys-toggle"), keysLabel: $("keys-label"), keysPick: $("keys-pick"),
     reply: $("reply"), send: $("send"), attach: $("attach"), attachRef: $("attach-ref"), attachX: $("attach-x"),
-    run: $("run"), runLabel: $("run-label"), runCmd: $("run-cmd"), runGo: $("run-go"), runAlways: $("run-always"), runSkip: $("run-skip"),
+    run: $("run"), runLabel: $("run-label"), runCmd: $("run-cmd"), runGo: $("run-go"), runProgram: $("run-program"), runAll: $("run-all"), runSkip: $("run-skip"),
     history: $("history"), tip: $("tip"),
   };
+  /** What the panel says with nothing going on, and with OMP ready to talk. */
+  const IDLE_INTRO = ui.idleText.innerHTML;
+  const OMP_INTRO = "Ask anything. For code work, OMP pairs with you: it types in your editor and talks as it goes.";
   let active = false, turn = "agent", paused = false, replaying = false;
   let omp = { state: "off" };   // the built-in OMP conversation, as the extension last reported it
   let voice = { enabled: false, state: "off", voice: "af_heart" };   // the voice, as the extension last reported it
   const ompEntries = {};   // a streaming OMP reply's history row, by its id
   let state = null;     // the agent's state, as the extension last reported it
+  let ahead = 0;        // batches written and waiting behind the one playing
+  let working = false;  // the agent is at work between its calls: thinking, or writing ahead
+  let thinkingSince = 0, statusClock = null;   // how long the agent has been thinking, shown as it goes
   let selection = null, selectionDismissed = false;   // the programmer's selection, offered with the reply
   let runId = null, runConfirming = false;   // the command shown in the run box
   let current = null;   // text of the current message
@@ -442,16 +542,241 @@ export function panelHtml(cspSource: string): string {
     voice = e;
     document.body.classList.toggle("voice", voiceReady());
     document.body.classList.toggle("voice-enabled", e.enabled);
-    ui.voiceToggle.textContent = e.enabled ? "Voice on" : "Voice off";
-    const words = !e.enabled ? "Words show here." : e.state === "loading" ? "Voice is loading…" : e.state === "ready" ? "Speaking. Words land in the history." : e.state === "error" ? (e.detail || "Voice failed. Words show here.") : "Voice on.";
+    ui.voiceToggle.setAttribute("aria-pressed", String(e.enabled));
+    // Only what needs saying shows in the row: loading and failing. The rest is in the tip.
+    const words = !e.enabled ? "" : e.state === "loading" ? "Loading voice…" : e.state === "error" ? (e.detail || "Voice failed. Words show here.") : "";
     ui.voiceStatus.textContent = words;
     ui.voiceStatus.dataset.tip = words;
-    setTip(ui.voice, e.enabled ? "Voice on: click to turn it off" : "Hear the agent instead of reading it");
+    const tip = !e.enabled ? "Voice off: hear the agent instead of reading it" : e.state === "ready" ? "Voice on: it speaks, and its words land in the history. Click to turn it off" : "Voice on: click to turn it off";
+    setTip(ui.voice, tip);
+    setTip(ui.voiceToggle, tip);
     if (voiceReady() && !wasReady && current !== null) {
       addAgent(rich(current));
       current = null;
     }
     syncTip();
+  }
+
+  // Typing sounds: a mechanical keyboard under the agent's typing, played from recordings of a real
+  // switch (see media/keys), the way keyboard sound apps do it. Each keystroke is a press and, a
+  // moment later, a release. A letter sounds like the row its key sits in, and space, enter and
+  // backspace have their own sounds; a capital or a symbol is typed with Shift held, as hands do.
+  // Each key has a pitch of its own, the same every time, as the keys of one board differ, and is
+  // placed left or right where it sits. A word's first stroke lands harder than those rattled off
+  // inside it, and harder strokes ring brighter. A short room around it all puts the keyboard on a
+  // desk instead of in the ear. Quiet by design, and quieter still while the voice talks.
+  const KEYS_RMS = 0.045;   // how loud a switch's presses are, on average, at full volume
+  const KEYS_DUCK = 0.5;    // its share of that while the voice is talking
+  const KEYS_ROOM = 0.14;   // how much of the room is heard, next to the keys themselves
+  // The keys of a US layout, row by row from the numbers down, unshifted and shifted.
+  const KEY_ROWS = [
+    ["\`1234567890-=", "~!@#$%^&*()_+"],
+    ["qwertyuiop[]\\\\", "QWERTYUIOP{}|"],
+    ["asdfghjkl;'", "ASDFGHJKL:\\""],
+    ["zxcvbnm,./", "ZXCVBNM<>?"],
+  ];
+  // GENERIC_R4 is the bottom row, where Shift sits.
+  const KEY_FILES = {
+    press: ["GENERIC_R0", "GENERIC_R1", "GENERIC_R2", "GENERIC_R3", "GENERIC_R4", "SPACE", "ENTER", "BACKSPACE"],
+    release: ["GENERIC", "SPACE", "ENTER", "BACKSPACE"],
+  };
+  /** What a switch types when it's tried out in the picker. */
+  const PREVIEW = "const name = \\"Ada\\";\\n";
+  let typingSounds = { enabled: false, volume: 0.5, sounds: "", name: "" }, speaking = false;
+  let audio = null, keysOut = null, samples = null, samplesFrom = "", lastKey = -1, lastShifted = false, previewRun = 0;
+  const banks = {};   // each switch's recordings, by folder: loaded once, so trying them out is instant
+
+  function keysAudio() {
+    if (!audio) {
+      audio = new AudioContext();
+      audio.onstatechange = syncKeys;
+      keysOut = audio.createGain();
+      keysOut.gain.value = keysLevel();
+      keysOut.connect(audio.destination);
+      const room = audio.createConvolver();
+      room.buffer = roomEcho();
+      const wet = audio.createGain();
+      wet.gain.value = KEYS_ROOM;
+      keysOut.connect(room).connect(wet).connect(audio.destination);
+    }
+    if (audio.state === "suspended") audio.resume().catch(() => {});
+    return audio;
+  }
+
+  // A small room's echo: a few early reflections off the desk and walls, then a soft tail gone in a
+  // quarter second, darker as it fades, a little different in each ear. Scaled to unit energy, so
+  // KEYS_ROOM alone sets how much of it is heard.
+  function roomEcho() {
+    const rate = audio.sampleRate, length = Math.round(rate * 0.25);
+    const echo = audio.createBuffer(2, length, rate);
+    for (let ch = 0; ch < 2; ch++) {
+      const data = echo.getChannelData(ch);
+      let dark = 0;
+      for (let i = 0; i < length; i++) {
+        const t = i / rate, keep = Math.min(0.9, t * 8);
+        dark = dark * keep + (Math.random() * 2 - 1) * (1 - keep);
+        data[i] = dark * Math.exp(-t / 0.05);
+      }
+      for (const ms of [6, 11, 17]) data[Math.round(rate * (ms + ch * 1.5) / 1000)] += 0.3;
+      let energy = 0;
+      for (const x of data) energy += x * x;
+      const scale = 1 / Math.sqrt(energy);
+      for (let i = 0; i < length; i++) data[i] *= scale;
+    }
+    return echo;
+  }
+
+  // A switch's recordings, from the folder the extension names. Switches are recorded louder or
+  // softer: each is evened out by its presses' loudness, so every switch sits at the same level.
+  function loadBank(from) {
+    banks[from] ??= (async () => {
+      const bank = { press: {}, release: {}, gain: 1 };
+      await Promise.all(Object.entries(KEY_FILES).flatMap(([stroke, names]) => names.map(async (name) => {
+        const response = await fetch(from + "/" + stroke + "/" + name + ".mp3");
+        bank[stroke][name] = await audio.decodeAudioData(await response.arrayBuffer());
+      })));
+      let energy = 0, length = 0;
+      for (const buffer of Object.values(bank.press)) {
+        for (const x of buffer.getChannelData(0)) energy += x * x;
+        length += buffer.length;
+      }
+      bank.gain = KEYS_RMS / Math.sqrt(energy / length);
+      return bank;
+    })().catch((error) => {
+      console.error("AI Pair couldn't load the typing sounds:", error);
+      delete banks[from];
+      return null;
+    });
+    return banks[from];
+  }
+
+  // Keystrokes before the switch's recordings are in make no sound.
+  async function useBank(from) {
+    samplesFrom = from;
+    samples = null;
+    const bank = await loadBank(from);
+    if (samplesFrom === from) samples = bank;
+  }
+
+  // Volume squared, the way ears hear it.
+  const keysLevel = () => typingSounds.volume * typingSounds.volume * (speaking ? KEYS_DUCK : 1);
+
+  // Steps back quickly when the voice starts and returns slowly, so gaps between sentences don't pump.
+  function syncKeysLevel() {
+    if (keysOut) keysOut.gain.setTargetAtTime(keysLevel(), audio.currentTime, speaking ? 0.04 : 0.5);
+  }
+
+  function setTypingSounds(e) {
+    typingSounds = { enabled: e.enabled, volume: e.volume, sounds: e.sounds, name: e.name || "" };
+    if (e.enabled) {
+      keysAudio();
+      if (e.sounds !== samplesFrom) void useBank(e.sounds);
+    } else if (audio) audio.suspend().catch(() => {});
+    syncKeysLevel();
+    syncKeys();
+  }
+
+  // A webview may only make sound once it has had a click or key of its own; until then the keys
+  // button asks for one, and clicking it lets the sound start rather than turning it off.
+  function syncKeys() {
+    const on = typingSounds.enabled, blocked = on && audio?.state !== "running";
+    document.body.classList.toggle("typing-sounds", on);
+    document.body.classList.toggle("keys-blocked", blocked);
+    ui.keys.setAttribute("aria-pressed", String(on));
+    ui.keysToggle.setAttribute("aria-pressed", String(on));
+    ui.keysLabel.textContent = blocked ? "Click to hear" : "Key sounds";
+    const named = typingSounds.name ? " (" + typingSounds.name + ")" : "";
+    const tip = blocked ? "Click to let the key sounds play: the panel needs a click before it may make sound" : on ? "Key sounds on" + named + ": you hear the agent's keystrokes. Click to turn them off" : "Key sounds off: hear the agent's keystrokes, softly, under its voice";
+    setTip(ui.keys, tip);
+    setTip(ui.keysToggle, tip);
+    syncTip();
+  }
+
+  function pressKey(text) {
+    if (samples && typingSounds.enabled && audio?.state === "running") stroke(samples, text);
+  }
+
+  // A few words typed on a switch, on or off, so it can be chosen by ear. A newer try cuts this one short.
+  async function previewKeys(from) {
+    const run = ++previewRun;
+    keysAudio();
+    const bank = await loadBank(from);
+    for (const ch of PREVIEW) {
+      if (run !== previewRun || !bank) return;
+      if (audio.state === "running") stroke(bank, ch);
+      const { promise, resolve } = Promise.withResolvers();
+      setTimeout(resolve, 65 + Math.random() * 45 + (/[\\s=;(]/.test(ch) ? 110 : 0));
+      await promise;
+    }
+    if (run === previewRun && !typingSounds.enabled) audio.suspend().catch(() => {});
+  }
+
+  function stroke(bank, text) {
+    const key = keyOf(text);
+    const now = audio.currentTime, gap = now - lastKey;
+    // Indentation lands all at once, unheard; and faster than fingers, as a fast type at high
+    // speed can be, is one sound for the burst.
+    if (!key || gap < 0.025) return;
+    lastKey = now;
+    const vary = (spread) => 1 + (Math.random() * 2 - 1) * spread;
+    const force = (gap > 0.15 ? 1.1 : gap < 0.09 ? 0.92 : 1) * vary(0.08);
+    const gain = bank.gain * force, rate = key.tone * vary(0.01);
+    let at = now;
+    // Shift goes down first, unless it's still held from the capital just before.
+    if (key.shift && !(lastShifted && gap < 0.3)) {
+      strike(bank.press.GENERIC_R4, now, gain * 0.55, 0.97, -0.5, force);
+      at += 0.035;
+    }
+    lastShifted = !!key.shift;
+    strike(bank.press[key.press], at, gain, rate, key.pan, force);
+    // A finger holds a key down for a moment, never quite the same one.
+    strike(bank.release[key.release], at + 0.05 + Math.random() * 0.06, gain * 0.8, rate, key.pan, force);
+  }
+
+  // Each key's own pitch, the same every time it's struck: within 3% either way.
+  const toneOf = (ch) => 1 + ((((ch.charCodeAt(0) * 2654435761) >>> 0) % 61) - 30) / 1000;
+
+  // Which recordings a keystroke sounds like, where its key sits from -1 (left) to 1 (right), its
+  // pitch, and whether Shift is held for it. None for a run of whitespace: indentation.
+  function keyOf(text) {
+    if (text === "\\b") return { press: "BACKSPACE", release: "BACKSPACE", pan: 0.35, tone: 1 };
+    if (text[0] === "\\n" || text[0] === "\\r") return { press: "ENTER", release: "ENTER", pan: 0.4, tone: 1 };
+    if (text === " ") return { press: "SPACE", release: "SPACE", pan: 0, tone: 1 };
+    if (text === "\\t") return { press: "GENERIC_R1", release: "GENERIC", pan: -0.4, tone: 0.98 };
+    if (!text.trim()) return null;
+    const ch = text[0];
+    for (let row = 0; row < KEY_ROWS.length; row++) {
+      const [plain, shifted] = KEY_ROWS[row];
+      const shiftAt = shifted.indexOf(ch), at = shiftAt >= 0 ? shiftAt : plain.indexOf(ch);
+      if (at >= 0) return { press: "GENERIC_R" + row, release: "GENERIC", pan: (at / (plain.length - 1) - 0.5) * 0.6, tone: toneOf(plain[at]), shift: shiftAt >= 0 };
+    }
+    return { press: "GENERIC_R2", release: "GENERIC", pan: 0, tone: toneOf(ch) };
+  }
+
+  function strike(buffer, at, gain, rate, pan, force) {
+    if (!buffer) return;
+    const source = audio.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = rate;
+    // Harder strokes ring brighter: a couple of decibels up top either way.
+    const tone = audio.createBiquadFilter();
+    tone.type = "highshelf";
+    tone.frequency.value = 3500;
+    tone.gain.value = (force - 1) * 25;
+    const level = audio.createGain();
+    level.gain.value = gain;
+    const place = audio.createStereoPanner();
+    place.pan.value = pan;
+    source.connect(tone).connect(level).connect(place).connect(keysOut);
+    source.start(at);
+  }
+
+  // A click or key in the panel lets sound start, should it have been held back until one. The keys
+  // buttons decide for themselves, by whether sound was held back when they were clicked.
+  for (const type of ["pointerdown", "keydown"]) {
+    document.addEventListener(type, (e) => {
+      if (typingSounds.enabled && !e.target.closest?.("#keys, #keys-toggle")) keysAudio();
+    }, true);
   }
 
   // The reading pause fills a ring around the status dot.
@@ -479,26 +804,47 @@ export function panelHtml(cspSource: string): string {
     typing: ["", "Agent is typing"],
     read: ["read", "Read this"],
     running: ["", "Running a command"],
-    thinking: ["dim", "Agent is thinking"],
+    thinking: ["think", "Agent is thinking"],
     paused: ["dim", "Paused"],
     listening: ["ring", "Your move"],
     navigator: ["ring", "Your turn"],
   };
 
+  /** Seconds as "8s" or "1:05". */
+  function elapsed(ms) {
+    const s = Math.floor(ms / 1000);
+    return s < 60 ? s + "s" : Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  }
+
   function syncStatus() {
     if (!active) {
+      clearInterval(statusClock);
+      statusClock = null;
       ui.dot.className = "dot off";
       ui.status.textContent = "No session";
       return;
     }
-    const [cls, text] = runConfirming ? ["read", "Needs you"] : STATUS[state] || ["", "Session started"];
+    let [cls, text] = runConfirming ? ["read", "Needs you: allow the command?"] : STATUS[state] || ["", "Session started"];
+    if (!runConfirming && state === "thinking") {
+      // What the agent is looking into, when it's OMP and says; a clock, so a long think reads as
+      // work going on, and a stuck agent as one.
+      if (omp && omp.activity) text = omp.activity;
+      const ms = Date.now() - thinkingSince;
+      text += " · " + elapsed(ms) + (ms > 90000 ? " · no word from it yet" : "");
+    } else if (!runConfirming && (state === "typing" || state === "read" || state === "running")) {
+      if (ahead > 0) text += " · " + ahead + " more ready";
+      if (working) text += " · writing more";
+    }
     ui.dot.className = "dot " + cls;
     syncReading();
     ui.status.textContent = text;
   }
 
   function setState(e) {
-    state = e.state; turn = e.turn; paused = e.paused;
+    if (e.state === "thinking" && state !== "thinking") thinkingSince = Date.now();
+    state = e.state; turn = e.turn; paused = e.paused; ahead = e.ahead || 0; working = !!e.working;
+    clearInterval(statusClock);
+    statusClock = state === "thinking" ? setInterval(syncStatus, 1000) : null;
     document.body.classList.toggle("paused", paused);
     document.body.classList.toggle("user-turn", turn === "user");
     ui.pause.classList.toggle("on", paused);
@@ -531,23 +877,48 @@ export function panelHtml(cspSource: string): string {
   function setOmp(e) {
     omp = e;
     document.body.classList.toggle("omp", ompOn());
+    document.body.classList.toggle("omp-busy", e.state === "busy");
     ui.reply.disabled = !(active || ompOn());
     if (!active) ui.reply.placeholder = ompOn() ? "Ask OMP…" : "Reply to the agent…";
     ui.ompStart.disabled = e.state === "starting";
-    ui.ompAbort.disabled = e.state !== "busy";
-    const words = { off: "", starting: "OMP is starting…", ready: "OMP is ready", busy: "OMP is working…" }[e.state] || "";
-    ui.ompStatus.textContent = [words, e.model, e.detail].filter(Boolean).join(" · ");
+    ui.ompDot.className = "dot " + e.state;
+    const doing = e.state === "busy" && e.activity ? e.activity : { starting: "Starting…", ready: "Ready", busy: "Working…" }[e.state] || "";
+    ui.ompState.textContent = [doing, e.detail].filter(Boolean).join(" · ");
+    ui.ompState.dataset.tip = ui.ompState.textContent;
+    // The provider is in the tip; the pill has room for the model's own name.
+    ui.ompModelName.textContent = e.model ? e.model.split("/").pop() : "Model";
+    setTip(ui.ompModel, e.model ? "Model: " + e.model + ". Click to change it" : "Choose the model OMP uses");
+    // How hard it thinks: OMP's own levels for this model, changed from a menu at any point.
+    // Another agent's level is its own app's to set, so the chip only says so.
+    const levels = e.thinkingLevels || [];
+    ui.ompThink.disabled = !ompOn() || levels.length === 0;
+    ui.ompThinkName.textContent = ompOn() && e.thinking ? thinkLabel(e.thinking) : "Thinking";
+    setTip(ui.ompThink, !ompOn() ? "Your agent's thinking level is set in its own app" :
+      e.thinking ? "Thinking: " + thinkLabel(e.thinking) + ". Click to change it" : "How hard the model thinks");
+    ui.thinkMenu.replaceChildren(...levels.map((level) => {
+      const b = document.createElement("button");
+      b.setAttribute("role", "menuitemradio");
+      b.setAttribute("aria-checked", String(level === e.thinking));
+      b.textContent = thinkLabel(level);
+      b.onclick = () => { closeThinkMenu(); ui.ompThink.focus(); vscode.postMessage({ type: "ompThinking", level }); };
+      return b;
+    }));
+    if (ui.ompThink.disabled) closeThinkMenu();
+    // Off, a reason it stopped shows by the Start button.
+    ui.ompStatus.textContent = e.state === "off" ? e.detail || "" : "";
     ui.ompStatus.dataset.tip = ui.ompStatus.textContent;
-    if (!active && ompOn()) {
-      ui.idleTitle.textContent = "OMP";
-      ui.idleText.textContent = "Say what to do. For code work OMP pairs with you: it types in your editor, slow, and talks as it goes.";
-    } else if (!active && !ompOn() && ui.idleTitle.textContent === "OMP") {
-      ui.idleTitle.textContent = "No active session";
-      ui.idleText.textContent = "Talk to OMP right here, ask another agent to pair with you, or play the demo.";
+    if (!active && ompOn() && !ui.idle.classList.contains("ended")) {
+      ui.idleText.textContent = OMP_INTRO;
+    } else if (!active && !ompOn() && ui.idleText.textContent === OMP_INTRO) {
+      ui.idleText.innerHTML = IDLE_INTRO;
     }
     syncAttach();
+    syncStatus();
     syncTip();
   }
+
+  const THINK_LABELS = { off: "Off", minimal: "Minimal", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
+  function thinkLabel(level) { return THINK_LABELS[level] || level; }
 
   function addOmp(e) {
     if (e.role === "note") { addDivider(e.text); return; }
@@ -577,12 +948,14 @@ export function panelHtml(cspSource: string): string {
           ui.ref.innerHTML = "";
           pointed = null;
           addDivider("Session started" + (e.task ? ": " + e.task : ""));
+          ui.idle.classList.remove("ended");
           setActive(true);
         } else {
           if (current !== null) addAgent(rich(current));
           current = null;
           const why = { agent: "The agent ended the session", user: "You ended the session", disconnected: "The agent disconnected" }[e.reason];
           addDivider(why);
+          ui.idle.classList.add("ended");
           ui.idleTitle.textContent = e.reason === "disconnected" ? "The agent disconnected" : "Session ended";
           ui.idleSummary.innerHTML = e.summary ? rich(e.summary) : "";
           ui.idleText.textContent = ompOn() ? "OMP is still here. Say what to do next." : "Ask your agent to pair again, or start OMP here.";
@@ -614,6 +987,12 @@ export function panelHtml(cspSource: string): string {
           ui.run.className = "on" + (runConfirming ? " confirm" : "");
           ui.runLabel.textContent = runConfirming ? "Allow this command in the terminal?" : "Running in the terminal…";
           ui.runCmd.textContent = e.command;
+          // Only a plain command has a program to allow: chained or piped ones could run anything.
+          ui.runProgram.hidden = !e.program;
+          if (e.program) {
+            ui.runProgram.textContent = "Allow " + e.program;
+            ui.runProgram.dataset.tip = "Run it, and every " + e.program + " command without asking until the session ends";
+          }
           syncStatus();
           if (runConfirming) arrive(ui.run);
           return;
@@ -636,6 +1015,10 @@ export function panelHtml(cspSource: string): string {
       case "focusReply": ui.reply.focus(); return;
       case "ompState": setOmp(e); return;
       case "voiceState": setVoice(e); return;
+      case "typingSounds": setTypingSounds(e); return;
+      case "speaking": speaking = e.speaking; syncKeysLevel(); return;
+      case "key": pressKey(e.text); return;
+      case "keysPreview": void previewKeys(e.sounds); return;
       case "ompChat": addOmp(e); return;
       case "ompDraft": ui.reply.value = e.text; syncDraft(); return;
       case "speed": {
@@ -696,8 +1079,8 @@ export function panelHtml(cspSource: string): string {
     vscode.postMessage({ type: "turn", ...(message ? { message } : {}), ...(attach ? { attach } : {}) });
   };
   ui.attachX.onclick = () => { selectionDismissed = true; syncAttach(); };
-  const decide = (run, remember) => { if (runId !== null) vscode.postMessage({ type: "runDecision", id: runId, run, remember }); };
-  ui.runGo.onclick = () => decide(true, false);
+  const decide = (run, allow) => { if (runId !== null) vscode.postMessage({ type: "runDecision", id: runId, run, allow }); };
+  ui.runGo.onclick = () => decide(true);
   ui.ompStart.onclick = () => vscode.postMessage({ type: "ompStart" });
   ui.ompStop.onclick = () => vscode.postMessage({ type: "ompStop" });
   ui.ompAbort.onclick = () => vscode.postMessage({ type: "ompAbort" });
@@ -705,9 +1088,20 @@ export function panelHtml(cspSource: string): string {
   ui.voice.onclick = () => vscode.postMessage({ type: "voiceToggle" });
   ui.voiceToggle.onclick = () => vscode.postMessage({ type: "voiceToggle" });
   ui.voicePick.onclick = () => vscode.postMessage({ type: "voicePick" });
+  const toggleTypingSounds = () => {
+    // A click may start sound where nothing else can. While sound waits for one, this is that click.
+    if (typingSounds.enabled && audio?.state !== "running") { keysAudio(); return; }
+    if (!typingSounds.enabled) keysAudio();
+    vscode.postMessage({ type: "typingSoundsToggle" });
+  };
+  ui.keys.onclick = toggleTypingSounds;
+  ui.keysToggle.onclick = toggleTypingSounds;
+  // This click is also what lets the picker's tries make sound: the list itself is outside the panel.
+  ui.keysPick.onclick = () => { keysAudio(); vscode.postMessage({ type: "typingSoundPick" }); };
   ui.ompModel.onclick = () => vscode.postMessage({ type: "ompModel" });
-  ui.runAlways.onclick = () => decide(true, true);
-  ui.runSkip.onclick = () => decide(false, false);
+  ui.runProgram.onclick = () => decide(true, "program");
+  ui.runAll.onclick = () => decide(true, "all");
+  ui.runSkip.onclick = () => decide(false);
   ui.end.onclick = () => vscode.postMessage({ type: "end" });
 
   function closeSpeedMenu() {
@@ -729,6 +1123,20 @@ export function panelHtml(cspSource: string): string {
   document.addEventListener("click", (e) => { if (!ui.speedMenu.hidden && !ui.speedMenu.contains(e.target)) closeSpeedMenu(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !ui.speedMenu.hidden) { closeSpeedMenu(); ui.speed.focus(); } });
 
+  function closeThinkMenu() {
+    ui.thinkMenu.hidden = true;
+    ui.ompThink.setAttribute("aria-expanded", "false");
+  }
+  ui.ompThink.onclick = (e) => {
+    e.stopPropagation();
+    const open = ui.thinkMenu.hidden;
+    ui.thinkMenu.hidden = !open;
+    ui.ompThink.setAttribute("aria-expanded", String(open));
+    if (open) ui.thinkMenu.querySelector('[aria-checked="true"]')?.focus();
+  };
+  document.addEventListener("click", (e) => { if (!ui.thinkMenu.hidden && !ui.thinkMenu.contains(e.target)) closeThinkMenu(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !ui.thinkMenu.hidden) { closeThinkMenu(); ui.ompThink.focus(); } });
+
   // Tooltips: an element's data-tip shows under it after a moment's hover, or at once while one is
   // showing or just was, the way VS Code's own hovers do; and on keyboard focus. A click hides it.
   const TIP_DELAY_MS = 500, TIP_WARM_MS = 300, TIP_GAP = 4, TIP_MARGIN = 6;
@@ -741,7 +1149,7 @@ export function panelHtml(cspSource: string): string {
 
   function showTip(el) {
     clearTimeout(tipTimer);
-    if (el === ui.speed && !ui.speedMenu.hidden) return;
+    if ((el === ui.speed && !ui.speedMenu.hidden) || (el === ui.ompThink && !ui.thinkMenu.hidden)) return;
     tipTarget = el;
     ui.tip.textContent = el.dataset.tip;
     ui.tip.hidden = false;

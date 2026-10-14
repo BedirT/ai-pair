@@ -32,7 +32,10 @@ Status: **draft**.
 - **The VS Code adapter** is a thin layer over the VS Code API: apply edits with
   undo stops, report document changes, render decorations, scroll, save. It
   tells the agent's edits apart from the programmer's by tracking the document
-  versions its own edits produce.
+  versions its own edits produce. A change landing within 300 ms right where
+  its last edit ended, and not an undo or a save's, is another extension
+  answering its typing (auto-closing quotes, format on type): it undoes that
+  before its next edit, so it never reaches the core.
 - **The narration panel** is a webview. It talks to the extension via
   `postMessage`.
 - **OMP in the panel** is the one agent the extension runs itself: a child
@@ -180,38 +183,128 @@ chat. **New chat** and **Model** map to the RPC `new_session` and `set_model`,
 goes to the _AI Pair OMP_ output channel. Other harnesses still run outside
 the editor, as above.
 
+**What didn't play leaves OMP's history.** When the programmer interrupts,
+the batches written ahead never play, but the `step` calls that sent them
+stay in the agent's history, and a model tends to believe what it sees
+itself write. So the panel's OMP also loads a small OMP extension
+([`ompExtension.ts`](packages/relay/src/ompExtension.ts), bundled to
+`dist/ompExtension.js` and passed with `-e`). On OMP's `context` hook it runs
+[`history.ts`](packages/relay/src/history.ts): it reads each interrupted,
+discarded or failed batch's "Not played" lines back from its report, finds
+the `step` call that sent that batch (by the "Batch N is queued" line in its
+result, or, when an interruption discarded it at once, as the last batch its
+own result lists), and cuts that call down to the beats that played. A beat
+cut short keeps its `say`, which was heard, and the actions that played
+whole. Where OMP keeps the provider's own record of the message (OpenAI
+Responses items, sent back in its place to keep the model's reasoning), the
+call is cut there too. It
+changes only what the model is sent, never the saved session, and it depends
+on the history alone, so the same history always gives the same rewrite and
+the provider's prompt cache still holds. Other agents have no such hook; they
+go by the report, which says plainly that what didn't play never happened.
+
 ## The voice
 
-A `say` can be spoken instead of only shown. The player asks its stage for a
-voice ([`VoicePort`](packages/core/src/ports.ts)); without one it keeps the
-reading pause. With one, talking and typing run together: the player
-measures how long the actions a `say` covers will take to play (up to the
-next `say`) and hands that span to `speak`, and the voice spreads its
-sentences across it — a touch slower or faster, with pauses between
-sentences. If the words need longer than the typing, playback waits out
-the difference first (`timing.voice.maxLeadMs` caps the wait), so talking
-and typing finish about together; a `say` with nothing after it is heard
-out in full when it is long (over `timing.voice.longWords`) or when a
-`point` highlight is up, so the view never leaves the pointed code
-mid-sentence. Interruptions settle the
-`speak` promise by stopping the voice. Rehearsals never get a voice: they
-are silent.
+A beat's `say` can be spoken instead of only shown. The player asks its stage
+for a voice ([`VoicePort`](packages/core/src/ports.ts)); without one the words
+are shown for their reading time. Either way a beat's words and its actions
+start together, and the next beat starts once both are done. With a voice,
+the player measures how long the beat's actions will take to play and hands
+that span to `speak`, and the voice spreads its sentences across it — a
+touch slower or faster, with pauses between sentences. Making speech takes a
+moment — longer for a heavier model, or behind words still queued — so
+`speak` also says when the words are first heard, and the actions wait for
+that (`timing.voice.maxStartMs` caps the wait, so a stuck voice can't stall
+the session); the hands never run ahead of the words about them. When the
+words run longer than the actions, the voice gets that much of a head start
+(`timing.voice.maxLeadMs` caps it), so talking and working end about
+together, and the beat is then heard out in full before the next one starts,
+so a `point` highlight stays on the code while it's talked about. A voice
+that goes quiet without finishing is let go after about twice the line's
+length. Without a voice, the actions start after `timing.voice.leadMs` (or
+the reading time, if shorter), and the beat lasts as long as the longer of
+reading and working. Interruptions settle the `speak` promise by stopping
+the voice. Rehearsals never get a voice: they are silent.
 
-The voice itself is **Kokoro**, the local speech model OMP ships, kept warm
-in a small worker process ([`voiceWorker.ts`](packages/vscode/src/voiceWorker.ts),
-built to `dist/voiceWorker.js`). It cannot run under VS Code's Electron
+The agent is told whether the voice is on (`VoicePort.enabled`): in the
+`start` report, and again in the first report after it changes, so it
+writes `say` for the ear or for the eye.
+
+**Speech is made ahead.** When a batch is queued, the controller hands each of
+its beats' `say`s to `VoicePort.prepare`, with the span the player will give it, so
+its sentences are made while the batches before it play and the batch starts
+talking at once. The speech queue
+([`voiceQueue.ts`](packages/vscode/src/voiceQueue.ts)) makes them in order, one
+at a time and a few ahead at most, so a fresh `say` after an interruption
+waits behind one sentence, not the whole queue. `speak` takes the one made
+for it; early ones it passes over, and everything made early when the voice
+is stopped, are let go.
+
+There are two voice models (`aiPair.voice.model`), each kept warm in a
+worker process that takes one sentence per JSON line in and writes a WAV per
+line; the extension ([`voice.ts`](packages/vscode/src/voice.ts)) restarts the
+worker when the model changes.
+
+The default is **Kokoro**, the local speech model OMP ships, in
+[`voiceWorker.ts`](packages/vscode/src/voiceWorker.ts) (built to
+`dist/voiceWorker.js`). It cannot run under VS Code's Electron
 runtime — the hardened runtime refuses the speech engine's native code —
 so bun, else node, found on the machine runs it. It loads OMP's installed
 `kokoro-js` (`~/.omp/agent/cache/tts-runtime/kokoro-*`, fetched on first
-turn-on by running `omp say` once), takes one sentence per JSON line in,
-and writes a WAV per line. The extension ([`voice.ts`](packages/vscode/src/voice.ts))
-cleans each `say` for the ear, splits it into sentences, makes the next
+turn-on by running `omp say` once).
+
+**Chatterbox** (Resemble AI's Turbo model, MIT) sounds more natural but is
+heavier, so it is offered on Apple Silicon only, where it runs on the GPU
+through [mlx-audio](https://github.com/Blaizzy/mlx-audio) at about 1.5×
+real time (the 4-bit model; ONNX on the CPU managed under half). Its worker
+is Python, [`chatterboxWorker.py`](packages/vscode/src/chatterboxWorker.py),
+run by `uv tool run --from mlx-audio==<pinned>` so no system Python is
+needed; the pin matters, because the worker swaps voices through a private
+field. Only a click may download: at startup the worker runs `--offline`
+with `HF_HUB_OFFLINE`, and if the model isn't there yet it says so; turning
+the voice on fetches it (about 1.3 GB, once). Its voice is the model's own,
+or one cloned from a recording the programmer picks. It has no pace to set,
+so its recording is played faster through `afplay --rate`, which keeps the
+pitch.
+
+**Pace.** One speed control drives typing and talking. The voice follows the
+session speed from 1× up to 2×: slower sessions keep its natural pace and
+just pause more, and past 2× words blur. `aiPair.voice.rate` multiplies on
+top, and span fitting nudges each line; all together stays within 0.5× and
+2×. Kokoro takes the pace as its `speed`.
+
+Either way, the extension
+puts each `say` the way a programmer says it out loud
+([`voiceText.ts`](packages/vscode/src/voiceText.ts): `req.body` is "req dot
+body", `user_id` "user id", `createTodo` "create todo", 404 "four oh four"),
+splits it into sentences — a dot inside a word ends none — makes the next
 while the last plays through the OS player (`afplay`, PowerShell's
 SoundPlayer, PulseAudio/PipeWire tools), and drops the oldest waiting
 sentences when speech falls behind. With no JS runtime to be had,
 `omp say` speaks each line itself — seconds slower to start, same voice.
 Words are spoken for every agent, not just the panel's OMP: the sound
 hangs off playback, not off the harness.
+
+## Typing sounds
+
+The player tells its stage's [`KeysPort`](packages/core/src/ports.ts) of
+each keystroke as it lands: the chunk it typed (a newline comes with its
+indent), or `"\b"` for a deletion. Rehearsals have none, like the voice.
+The panel is that port: when the sounds are on it posts each keystroke to
+its page, which plays it with Web Audio from one switch's recordings
+(`media/keys/<switch>`, from [kbsim](https://github.com/tplai/kbsim), MIT):
+a press by the key's row or kind (Shift's row first for a shifted key), then
+a release 50–110 ms later, panned to the key, pitched by a fixed per-key
+offset, and struck harder and brighter (a high shelf) after a pause. A
+whitespace-only chunk, an indent, is silent. Everything runs through one
+gain node into the speakers and, quietly, through a convolver with a short
+generated room echo. Switches are evened out by their presses' loudness on
+load and kept once loaded. **AI Pair: Select Typing Sound Switch** (the
+arrow by Key sounds) is a quick pick that posts `keysPreview` as each item
+becomes active; the page types a short line on that switch, cutting off any
+earlier try. The voice tells the panel when it is sounding (`showSpeaking`),
+and the page lowers the keys under it. A webview may only start sound after
+a click or key of its own, so until one the keys button asks for it.
 
 ## Distribution
 

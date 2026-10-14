@@ -55,9 +55,11 @@ Once the extension is [installed](#install), the easy way is OMP in the panel:
    there is nothing to set up by hand.
 3. Say what to do in the panel: _"Add a settings page. I'm new to Svelte,
    explain as you go."_ For code work, OMP starts a pair session and types in
-   your editor; a plain question it answers in the panel. **Model** picks the
-   model, **New chat** starts over, **Stop** (in the panel) halts a turn, and
-   the exit button turns OMP off.
+   your editor; a plain question it answers in the panel. The model pill
+   under OMP's name picks the model, the chip beside it how hard it thinks
+   (lower means shorter waits between batches), **+** starts a new chat,
+   **■** (shown while it works) halts a turn, and the power button turns OMP
+   off.
 
 With any other agent, [connect it](#connect-your-agent) once, keep using it as
 usual, and when you want to pair:
@@ -73,17 +75,18 @@ usual, and when you want to pair:
 Anything you say or edit interrupts the agent, so its next move takes it into
 account. While you pair:
 
-| To…                        | Do this                                                                                                                                 |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| say something to the agent | type in the reply box, press Enter. Typing pauses playback.                                                                             |
-| ask about some code        | select it in the editor, then reply: the selection goes along (× leaves it out)                                                         |
-| let it run a command       | the agent's tests and builds play in an _AI Pair_ terminal; **Run**, **Allow for session**, or **Skip** in the panel                    |
-| stop it right now          | **Interrupt**, or just edit the code: any edit interrupts                                                                               |
-| look around                | scroll or switch files. Playback pauses until you **Resume**, which brings you back to the agent's cursor                               |
-| write a part yourself      | **My turn**. The agent becomes the navigator and comments as you type. **Hand back** returns the turn, with your reply if you typed one |
-| change the pace            | the speed menu (**1.0×**), from 0.4× to 3.0×                                                                                            |
-| hear it, not read it       | turn **Voice** on in the panel. It talks while it types, so your eyes stay on the code; the words still land in the history             |
-| finish                     | **End**, or tell the agent you're done. You can pair again anytime                                                                      |
+| To…                        | Do this                                                                                                                                      |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| say something to the agent | type in the reply box, press Enter. Typing pauses playback.                                                                                  |
+| ask about some code        | select it in the editor, then reply: the selection goes along (× leaves it out)                                                              |
+| let it run a command       | the agent's tests and builds play in an _AI Pair_ terminal; **Run**, **Allow _npm_** (that program), **Allow all**, or **Skip** in the panel |
+| stop it right now          | **Interrupt**, or just edit the code: any edit interrupts                                                                                    |
+| look around                | scroll or switch files. Playback pauses until you **Resume**, which brings you back to the agent's cursor                                    |
+| write a part yourself      | **My turn**. The agent becomes the navigator and comments as you type. **Hand back** returns the turn, with your reply if you typed one      |
+| change the pace            | the speed menu (**1.0×**), from 0.4× to 3.0×. The voice speeds up with it, up to 2×                                                          |
+| hear it, not read it       | turn **Voice** on in the panel. It talks while it types, so your eyes stay on the code; the words still land in the history                  |
+| hear it type               | turn **Key sounds** on. Its keystrokes sound like a mechanical keyboard, kept well under the voice; the arrow beside it picks the keyboard   |
+| finish                     | **End**, or tell the agent you're done. You can pair again anytime                                                                           |
 
 The cursor's color tells you what the agent is doing. It's yellow and pulsing
 when it's just said something and is waiting for you to read it — or, with the
@@ -95,11 +98,32 @@ the typing they explain — a long explanation gets a head start, then talks
 over the typing, so the talking and the typing finish about together. The
 big text in the panel
 goes away, so there's only one thing to watch — the code. The words still
-land in the panel's history. The voice is **Kokoro**, a speech model that
-runs on your own machine (the one OMP ships), so nothing is sent anywhere to
-be spoken. The first turn-on may download it once: about 100 MB of model, in
-a few hundred MB of runtime that OMP already keeps. **Pick a voice** chooses
-whose it is, and turning the voice off brings the big text back.
+land in the panel's history. The voice runs on your own machine, so nothing
+is sent anywhere to be spoken, and the typing a sentence explains waits
+until you hear it. The arrow beside **Voice** chooses the model and whose voice it is:
+
+- **Kokoro** (the default), the speech model OMP ships. Light, and works
+  everywhere. The first turn-on may download it once: about 100 MB of model,
+  in a few hundred MB of runtime that OMP already keeps.
+- **Chatterbox**, more natural, on Apple Silicon only. It runs through
+  [uv](https://docs.astral.sh/uv/), which must be installed, and the first
+  turn-on fetches about 1.3 GB (a couple of minutes). It speaks in its own
+  voice, or in one taken from a recording you pick — only use a voice you
+  have the right to.
+
+Turning the voice off brings the big text back.
+
+**Hear it type.** The keyboard button in the Pair panel turns on **typing
+sounds**: each of the agent's keystrokes plays a recording of a real switch,
+a press and then a release, the way keyboard sound apps do it. Letters sound
+by the row their key sits in, space, enter and backspace have their own
+sounds, and every stroke is placed left or right and varied a little, so it
+never drones. It stays well under the voice and steps back further while the
+voice talks. VS Code lets the panel make sound only after a click in it: until
+then the keyboard button turns yellow, and clicking it lets the sound start.
+`aiPair.typingSounds.switch` picks the switch (Holy Panda by default, or
+Cream, MX Brown, Topre). The recordings are from
+[kbsim](https://github.com/tplai/kbsim), MIT.
 
 **Try it without an agent:** _AI Pair: Play Demo Session_ plays a scripted
 session that adds a small API to an Express app, which it creates in
@@ -113,10 +137,11 @@ agent (Claude Code, …) ── stdio MCP ──▶ pair-mcp ── local WebSoc
 
 The agent submits small batches of actions: say, move, select, type, delete,
 point, run. The extension plays them at a human pace and reports back exactly
-what happened, including everything you did in the meantime. The agent plans
-its next batch while you watch the current one, which hides most of its
-thinking time. And it's never more than one batch ahead, so your interruptions
-land immediately.
+what happened, including everything you did in the meantime. The agent writes
+its next batches while you watch the current one, up to about 30 seconds of
+playback ahead, which hides its thinking time. That cap is kept short on
+purpose: when you step in, what it wrote ahead is thrown away, and your
+interruption lands right away.
 
 The design is written up in:
 
@@ -173,18 +198,25 @@ code --install-extension ai-pair-*.vsix
 
 ## Settings
 
-| Setting                    |                                                                                                                                                                      |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `aiPair.speed`             | Overall playback speed (the panel's speed menu offers 0.4× to 3.0×).                                                                                                 |
-| `aiPair.agentName`         | The name on the agent's cursor.                                                                                                                                      |
-| `aiPair.timing`            | Fine-tune any typing or pause duration, e.g. `{ "afterSelectMs": 900, "type": { "wordStartMs": 140 } }`. Every key is in [`timing.ts`](packages/core/src/timing.ts). |
-| `aiPair.confirmCommands`   | Ask before each command the agent runs in the terminal (default on). Turned off, the agent's commands run without any prompt, not even its own.                      |
-| `aiPair.omp.path`          | Path to the `omp` program the panel starts. Empty finds it on the PATH, in `~/.local/bin`, or in `~/.bun/bin`.                                                       |
-| `aiPair.omp.model`         | Model the panel's OMP starts with (OMP's fuzzy match). Empty uses OMP's own default.                                                                                 |
-| `aiPair.voice.enabled`     | Speak what the agent says, live, on this machine. Off by default; the panel's **Voice** button flips it.                                                             |
-| `aiPair.voice.voice`       | Whose Kokoro voice it is.                                                                                                                                            |
-| `aiPair.voice.rate`        | How fast the voice talks (1 is its own pace).                                                                                                                        |
-| `aiPair.voice.runtimePath` | A bun or node program to run the voice with, if the usual places have none.                                                                                          |
+| Setting                        |                                                                                                                                                                                              |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `aiPair.speed`                 | Overall playback speed (the panel's speed menu offers 0.4× to 3.0×). The voice follows it from 1× up to 2×.                                                                                  |
+| `aiPair.agentName`             | The name on the agent's cursor.                                                                                                                                                              |
+| `aiPair.timing`                | Fine-tune any typing or pause duration, e.g. `{ "afterSelectMs": 900, "type": { "wordStartMs": 140 } }`. Every key is in [`timing.ts`](packages/core/src/timing.ts).                         |
+| `aiPair.confirmCommands`       | Ask before each command the agent runs in the terminal (default on). Turned off, the agent's commands run without any prompt, not even its own.                                              |
+| `aiPair.workAheadBatches`      | How many batches the agent may write ahead of what you're watching (default 2, at most 10). More means fewer pauses; less means less thrown away when you step in. `0` waits for each batch. |
+| `aiPair.omp.path`              | Path to the `omp` program the panel starts. Empty finds it on the PATH, in `~/.local/bin`, or in `~/.bun/bin`.                                                                               |
+| `aiPair.omp.model`             | Model the panel's OMP starts with (OMP's fuzzy match). Empty uses OMP's own default.                                                                                                         |
+| `aiPair.omp.thinking`          | How hard the panel's OMP thinks before each move (`off` … `max`). Lower means shorter waits between batches; `low` or `medium` suit most pairing. Empty uses OMP's own setting.              |
+| `aiPair.voice.enabled`         | Speak what the agent says, live, on this machine. Off by default; the panel's **Voice** button flips it.                                                                                     |
+| `aiPair.voice.model`           | Which speech model: `kokoro` (default, works everywhere) or `chatterbox` (more natural, Apple Silicon, needs uv).                                                                            |
+| `aiPair.voice.voice`           | Whose Kokoro voice it is.                                                                                                                                                                    |
+| `aiPair.voice.chatterboxVoice` | A recording for Chatterbox to sound like. Empty uses its own voice.                                                                                                                          |
+| `aiPair.voice.rate`            | How fast the voice talks on top of the playback speed (1 is its own pace).                                                                                                                   |
+| `aiPair.voice.runtimePath`     | A bun or node program to run the voice with, if the usual places have none.                                                                                                                  |
+| `aiPair.typingSounds.enabled`  | Play the agent's keystrokes as a mechanical keyboard. Off by default; the panel's keyboard button flips it.                                                                                  |
+| `aiPair.typingSounds.volume`   | How loud, from 0 to 1 (0.5 by default). Always under the voice.                                                                                                                              |
+| `aiPair.typingSounds.switch`   | Which switch's recordings: `holypanda`, `cream`, `alpaca`, `mxbrown`, `topre` or `buckling`. Or pick one by ear with the arrow by **Key sounds**.                                            |
 
 ## Troubleshooting
 
@@ -202,7 +234,9 @@ code --install-extension ai-pair-*.vsix
   own runtime can't load its native code). Install OMP so the first turn-on
   can fetch it, and have bun or node on the machine, or set
   `aiPair.voice.runtimePath`. What it said on its way out is in the _AI Pair
-  Voice_ output channel.
+  Voice_ output channel. Chatterbox needs [uv](https://docs.astral.sh/uv/)
+  and an Apple Silicon Mac; if it says it couldn't start from what's already
+  downloaded, turn the voice off and on to fetch it.
 - **After updating the extension,** reload the VS Code window and restart the
   agent.
 

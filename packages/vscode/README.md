@@ -60,8 +60,9 @@ For the others:
 ## Pair
 
 With OMP in the panel, just say the task. For code work it starts pairing and
-types in your editor; a plain question it answers in the panel. **Model**
-picks the model, **New chat** starts over.
+types in your editor; a plain question it answers in the panel. The model
+pill picks the model, the chip beside it how hard it thinks (lower means
+shorter waits between batches), **+** starts a new chat.
 
 With another agent, start it in the folder that's open in VS Code and ask it
 to pair ("let's pair on…"). In Claude Code you can also run
@@ -73,15 +74,23 @@ to pair ("let's pair on…"). In Claude Code you can also run
   goes along (× leaves it out). Or right-click it: *Ask the Agent About the
   Selection*.
 - **Commands:** the agent's tests and builds play in an *AI Pair* terminal.
-  Choose **Run**, **Allow for session**, or **Skip** in the panel.
+  Choose **Run**, **Allow** that program (like `npm`) or **Allow all** for
+  the session, or **Skip** in the panel.
 - **Interrupt:** the button, or just edit the code.
 - **Look around:** scrolling or switching files pauses playback. **Resume**
   brings you back.
 - **My turn / Hand back:** write a part yourself while the agent navigates.
-- **The speed menu (1.0×):** the pace, from 0.4× to 3.0×.
+- **The speed menu (1.0×):** the pace, from 0.4× to 3.0×. The voice speeds up
+  with it, up to 2×.
 - **Voice:** hear it instead of reading it. Turn **Voice** on in the panel and
-  what the agent says is spoken as it works — Kokoro, on your own machine —
-  while the words still land in the history. Your eyes stay on the code.
+  what the agent says is spoken as it works, on your own machine, while the
+  words still land in the history. Your eyes stay on the code. **Pick a
+  voice** offers Kokoro (light, works everywhere) or Chatterbox (more
+  natural; Apple Silicon, needs uv, fetches about 1.3 GB once).
+- **Key sounds:** the keyboard button plays the agent's keystrokes as a
+  real mechanical keyboard, softly, under the voice. The arrow beside it
+  picks one of six keyboards, each playing as you move to it. Click the
+  panel once so VS Code lets it make sound.
 
 **AI Pair: Play Demo Session** shows what it's like without an agent.
 
@@ -92,6 +101,10 @@ to pair ("let's pair on…"). In Claude Code you can also run
 - `aiPair.timing`: fine-tune any typing or pause duration.
 - `aiPair.confirmCommands`: ask before each command the agent runs in the
   terminal (on by default).
-- `aiPair.omp.path` / `aiPair.omp.model`: where the panel's `omp` is, and the
-  model it starts with.
+- `aiPair.omp.path` / `aiPair.omp.model` / `aiPair.omp.thinking`: where the
+  panel's `omp` is, and the model and thinking level it starts with.
+- `aiPair.workAheadBatches`: how many batches the agent may write ahead of
+  what you're watching (default 2).
 - `aiPair.voice.*`: the voice — on or off, whose it is, and how fast it talks.
+- `aiPair.typingSounds.*`: typing sounds — on or off, how loud, and which
+  switch.

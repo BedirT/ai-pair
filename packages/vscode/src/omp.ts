@@ -11,31 +11,42 @@ import type { NarrationPanel, OmpPort, OmpStatus } from "./panel"
 const HOST: Host = { home: os.homedir(), env: process.env, platform: process.platform, exec: execProgram }
 
 const OTHER = "Other (type your own)"
+/** How long what OMP last looked at stays on show after the tool is done: a read takes milliseconds. */
+const ACTIVITY_LINGER_MS = 4000
 
 /** Told to every OMP the panel starts, on top of its own system prompt. */
 export const OMP_PAIR_PROMPT =
   "You are running inside the AI Pair panel in the programmer's VS Code window, in their project folder. " +
   "They talk to you in that panel and watch their editor. When they give you a coding task, or ask you to explain code in the editor, pair with them: " +
   "call the `start` tool of the `pair` MCP server first and follow the guide it returns for the whole session. " +
+  "The programmer is waiting from the moment they ask, so get going: call `start` right away, reading the pair tools' docs in that same turn if you need them, " +
+  "then send a `step` with one beat, just a `say`, telling them what you'll look at first, like \"Let me look around your project first.\", and only then read their files. " +
   "While pairing, make every change to files through pair `step` actions typed in their editor; never edit, write, or delete files with your own tools or the shell. " +
+  "Call the pair tools themselves, never from inside eval or other code: the panel follows those calls, and after an interrupt it shows your history only what played. " +
   "Reading and searching with your own tools to plan a step is fine. Answer a plain question that needs no code work right in the chat, without starting a session. " +
   "If the pair tools are missing, say so in the chat and ask the programmer to run AI Pair: Set Up Agent, pick OMP, and restart OMP from the panel."
 
 export type OmpOptions = {
   launcher: string
+  /** The OMP extension that cuts interrupted `step` calls down to what played, in the model's history. */
+  extension: string
   /** The folder OMP works in, or undefined when no folder is open. */
   root(): string | undefined
-  config(): { path: string; model: string }
+  config(): { path: string; model: string; thinking: string }
   isPairActive(): boolean
 }
 
 export class OmpHost implements OmpPort {
   private rpc?: OmpRpc
   private current: OmpStatus = { state: "off" }
+  /** The model and thinking level OMP last reported, kept across state changes while it runs. */
+  private chosen: Pick<OmpStatus, "model" | "thinking" | "thinkingLevels"> = {}
   private seq = 0
   /** A reply still streaming in, by OMP's message id: the text so far. */
   private readonly streaming = new Map<string, string>()
   private readonly output = vscode.window.createOutputChannel("AI Pair OMP")
+  /** Lets a finished tool's activity linger, so a quick read shows long enough to be seen. */
+  private activityTimer: NodeJS.Timeout | undefined
 
   constructor(
     private readonly panel: NarrationPanel,
@@ -60,7 +71,7 @@ export class OmpHost implements OmpPort {
     }
     const root = this.options.root()
     if (!root) throw new Error("open a folder first, so OMP knows where to work.")
-    const { path, model } = this.options.config()
+    const { path, model, thinking } = this.options.config()
     const command = path.trim() || findOmp(HOST)
     if (!command) {
       throw new Error("OMP wasn't found on this machine. Install OMP, or set its full path in the `aiPair.omp.path` setting.")
@@ -88,12 +99,13 @@ export class OmpHost implements OmpPort {
     this.rpc = rpc
     const args = ["--mode", "rpc-ui", "--cwd", root]
     if (model.trim()) args.push("--model", model.trim())
-    args.push("--append-system-prompt", OMP_PAIR_PROMPT)
+    if (thinking) args.push("--thinking", thinking)
+    args.push("--append-system-prompt", OMP_PAIR_PROMPT, "-e", this.options.extension)
     await rpc.start(command, args, root, process.env)
     void rpc.request("set_ask_dialog", { enabled: true }).catch(() => {})
     this.note("OMP started.")
     await this.refreshModel()
-    if (this.rpc === rpc) this.setStatus({ state: rpc.streaming ? "busy" : "ready", model: this.current.model })
+    if (this.rpc === rpc) this.setStatus({ state: rpc.streaming ? "busy" : "ready" })
   }
 
   stop(): void {
@@ -150,6 +162,15 @@ export class OmpHost implements OmpPort {
     await this.refreshModel()
   }
 
+  setThinking(level: string): void {
+    const rpc = this.rpc
+    if (!rpc) return
+    void rpc
+      .request("set_thinking_level", { level })
+      .then(() => this.refreshModel())
+      .catch((error: unknown) => this.note(`Couldn't change the thinking level: ${error instanceof Error ? error.message : String(error)}`))
+  }
+
   prompt(text: string): void {
     const rpc = this.rpc
     if (!rpc?.running) {
@@ -162,13 +183,21 @@ export class OmpHost implements OmpPort {
   }
 
   dispose(): void {
+    clearTimeout(this.activityTimer)
     this.rpc?.dispose()
     this.output.dispose()
   }
 
-  private setStatus(status: OmpStatus): void {
-    this.current = status
-    this.panel.showOmpStatus(status)
+  /** Sets how OMP is doing; while it runs, its model and thinking level ride along. */
+  private setStatus(status: Omit<OmpStatus, "model" | "thinking" | "thinkingLevels">): void {
+    this.current = status.state === "off" ? status : { ...status, ...this.chosen }
+    this.panel.showOmpStatus(this.current)
+  }
+
+  private showActivity(activity: string | undefined): void {
+    clearTimeout(this.activityTimer)
+    if (activity === this.current.activity || this.current.state !== "busy") return
+    this.setStatus({ ...this.current, activity })
   }
 
   private note(text: string): void {
@@ -179,9 +208,17 @@ export class OmpHost implements OmpPort {
     const rpc = this.rpc
     if (!rpc) return
     try {
-      const state = await rpc.request("get_state")
+      // The levels depend on the model, so they're asked again whenever the model changes.
+      const [state, levels] = await Promise.all([rpc.request("get_state"), rpc.request("get_available_thinking_levels")])
       if (this.rpc !== rpc) return
-      this.setStatus({ state: field(state, "isStreaming") === true ? "busy" : "ready", model: modelLabel(field(state, "model")) })
+      const thinking = field(state, "thinkingLevel")
+      const list = field(levels, "levels")
+      this.chosen = {
+        model: modelLabel(field(state, "model")),
+        ...(typeof thinking === "string" ? { thinking } : {}),
+        ...(Array.isArray(list) ? { thinkingLevels: list.filter((l): l is string => typeof l === "string") } : {}),
+      }
+      this.setStatus({ state: field(state, "isStreaming") === true ? "busy" : "ready", ...(this.current.activity ? { activity: this.current.activity } : {}) })
     } catch {
       // The next event will say how OMP is doing; a missing model label is not worth an error.
     }
@@ -192,13 +229,15 @@ export class OmpHost implements OmpPort {
     const pairing = this.options.isPairActive()
     switch (frame.type) {
       case "agent_start":
-        this.setStatus({ state: "busy", model: this.current.model })
+        this.setStatus({ state: "busy" })
         return
       case "agent_end":
       case "session_settled":
-        if (this.current.state !== "off") this.setStatus({ state: "ready", model: this.current.model })
+        clearTimeout(this.activityTimer)
+        if (this.current.state !== "off") this.setStatus({ state: "ready" })
         return
       case "model_changed":
+      case "thinking_level_changed":
         void this.refreshModel()
         return
       case "prompt_result": {
@@ -229,12 +268,23 @@ export class OmpHost implements OmpPort {
         return
       }
       case "tool_execution_start": {
-        if (pairing || typeof frame.toolName !== "string") return
+        if (typeof frame.toolName !== "string") return
         const where = field(frame.args, "path")
         const command = field(frame.args, "command")
         const about = typeof where === "string" ? where : typeof command === "string" ? command : ""
+        // The pair tools show themselves in the editor; anything else is OMP looking around, and
+        // the panel says so, in OMP's own words when it gave some.
+        const pairTool = /^(xd:\/\/)?mcp__pair_/.test(about) || frame.toolName.startsWith("mcp__pair_")
+        const doing = typeof frame.intent === "string" && frame.intent ? frame.intent : `${frame.toolName}${about ? ` ${about.slice(0, 60)}` : ""}`
+        this.showActivity(pairTool ? undefined : doing)
+        if (pairing) return
         const id = typeof frame.toolCallId === "string" ? frame.toolCallId : `tool-${++this.seq}`
         this.panel.showOmpChat({ id, role: "tool", text: `▸ ${frame.toolName}${about ? ` ${about.slice(0, 80)}` : ""}` }, true)
+        return
+      }
+      case "tool_execution_end": {
+        clearTimeout(this.activityTimer)
+        if (this.current.activity) this.activityTimer = setTimeout(() => this.showActivity(undefined), ACTIVITY_LINGER_MS)
         return
       }
       case "notice": {

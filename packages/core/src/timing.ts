@@ -19,18 +19,21 @@ export type Cadence = {
 
 export type Reading = { msPerWord: number; minMs: number; maxMs: number }
 
-/** How a spoken `say` paces playback, when a voice is on. */
+/** How a beat's `say` and its work fit together. */
 export type VoiceTiming = {
-  /** How long typing waits for the voice to begin, before it goes on under the talking. */
+  /** How long the work waits for the words to begin, read or spoken, before it goes on under them. */
   leadMs: number
   /**
-   * The most typing waits when a `say` runs much longer than the work it covers: that much is
-   * spoken first, the rest talks over the typing and into whatever follows.
+   * The most the work waits for a spoken `say`'s first words to be heard: making speech takes a
+   * moment, and words still queued go first. Past this the voice is taken to be stuck, and work goes on.
+   */
+  maxStartMs: number
+  /**
+   * The most the work waits when a spoken `say` runs much longer than the work it covers: that
+   * much is spoken first, the rest talks over the work.
    */
   maxLeadMs: number
-  /** A trailing `say` — no work after it in its batch — longer than this many words is spoken in full before playback goes on. */
-  longWords: number
-  /** How long a word takes to say, for pacing speech against the typing it covers. */
+  /** How long a word takes to say, for pacing speech against the work it covers. */
   msPerWord: number
 }
 
@@ -38,9 +41,9 @@ export type Timing = {
   type: Cadence
   /** `type_fast` plays the same cadence, with every delay multiplied by this. */
   fastFactor: number
-  /** After a `say`: enough to read the message at an ordinary pace. */
+  /** A `say` that's read: the least its beat lasts, enough to read it at an ordinary pace. */
   reading: Reading
-  /** After a spoken `say`: how the voice and the typing fit together. */
+  /** A beat's words and work, read or spoken. */
   voice: VoiceTiming
   /** Before a move, so the jump doesn't look instantaneous. */
   beforeMoveMs: number
@@ -70,7 +73,7 @@ export const defaultTiming: Timing = {
   },
   fastFactor: 0.25,
   reading: { msPerWord: 270, minMs: 1500, maxMs: 9000 },
-  voice: { leadMs: 350, maxLeadMs: 4000, longWords: 14, msPerWord: 380 },
+  voice: { leadMs: 350, maxStartMs: 10000, maxLeadMs: 4000, msPerWord: 380 },
   beforeMoveMs: 150,
   afterMoveNearMs: 450,
   afterMoveFarMs: 900,

@@ -1,11 +1,22 @@
 // The narration panel: a webview view in the secondary side bar. See "Narration panel" in DESIGN.md.
 
 import * as vscode from "vscode"
-import type { Controller, PanelEvent, PanelPort, Ref, SharedSelection } from "@ai-pair/core"
+import type { Controller, KeysPort, PanelEvent, PanelPort, Ref, SharedSelection } from "@ai-pair/core"
 import { panelHtml } from "./panelHtml"
 
-/** How the built-in OMP conversation is doing, as the panel shows it. */
-export type OmpStatus = { state: "off" | "starting" | "ready" | "busy"; model?: string; detail?: string }
+/**
+ * How the built-in OMP conversation is doing, as the panel shows it. `activity`: what OMP is doing
+ * with its own tools right now, like reading a file, in its own words. `thinking`: how hard the
+ * model thinks, one of `thinkingLevels`, the levels the model offers.
+ */
+export type OmpStatus = {
+  state: "off" | "starting" | "ready" | "busy"
+  model?: string
+  thinking?: string
+  thinkingLevels?: string[]
+  detail?: string
+  activity?: string
+}
 
 /** One line of the OMP conversation in the panel's history. `id` ties a reply's updates together. */
 export type OmpChat = { id: string; role: "assistant" | "note" | "tool"; text: string }
@@ -17,6 +28,7 @@ export type OmpPort = {
   abort(): void
   newChat(): void
   pickModel(): void
+  setThinking(level: string): void
   prompt(text: string): void
   status(): OmpStatus
 }
@@ -30,6 +42,9 @@ export type VoicePanelPort = {
   pickVoice(): void
   status(): VoiceStatus
 }
+
+/** The typing sounds' settings, as the panel plays them. `sounds`: the folder of the switch's recordings; `name`: the switch's. */
+export type TypingSounds = { enabled: boolean; volume: number; sounds: vscode.Uri; name: string }
 
 /** Messages from the webview. */
 type FromPanel =
@@ -48,14 +63,17 @@ type FromPanel =
   /** A command the intro offers, like Set Up Agent. */
   | { type: "command"; command: string }
   | { type: "speed"; value: number }
-  | { type: "runDecision"; id: number; run: boolean; remember?: boolean }
+  | { type: "runDecision"; id: number; run: boolean; allow?: "program" | "all" }
   | { type: "ompStart" }
   | { type: "ompStop" }
   | { type: "ompAbort" }
   | { type: "ompNew" }
   | { type: "ompModel" }
+  | { type: "ompThinking"; level: string }
   | { type: "voiceToggle" }
   | { type: "voicePick" }
+  | { type: "typingSoundsToggle" }
+  | { type: "typingSoundPick" }
 
 const MAX_LOG = 400
 
@@ -64,7 +82,7 @@ const PANEL_COMMANDS: ReadonlySet<string> = new Set(["aiPair.playDemo", "aiPair.
 
 /** Everything the panel replays when its view is (re)created: pair events and finished OMP lines, in order. */
 type Logged = PanelEvent | ({ type: "ompChat" } & OmpChat)
-export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
+export class NarrationPanel implements PanelPort, KeysPort, vscode.WebviewViewProvider {
   static readonly viewId = "aiPair.narration"
   controller?: Controller
   omp?: OmpPort
@@ -74,6 +92,7 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
   private readonly log: Logged[] = []
   private ompStatus: OmpStatus = { state: "off" }
   private voiceStatus: VoiceStatus = { enabled: false, state: "off", voice: "af_heart" }
+  private typingSounds?: TypingSounds
 
   constructor(
     private readonly resolvePath: (file: string) => string,
@@ -103,6 +122,31 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
     this.voiceStatus = status
     void vscode.commands.executeCommand("setContext", "aiPair.voiceOn", status.enabled)
     void this.view?.webview.postMessage({ type: "voiceState", ...status })
+  }
+
+  /** The voice started or stopped sounding: the typing sounds step back while it does. Not logged. */
+  showSpeaking(speaking: boolean): void {
+    void this.view?.webview.postMessage({ type: "speaking", speaking })
+  }
+
+  /** The typing sounds were turned on or off, louder or softer, or another switch. Not logged: only now matters. */
+  showTypingSounds(sounds: TypingSounds): void {
+    this.typingSounds = sounds
+    const webview = this.view?.webview
+    if (!webview) return
+    const { enabled, volume, name } = sounds
+    void webview.postMessage({ type: "typingSounds", enabled, volume, name, sounds: webview.asWebviewUri(sounds.sounds).toString() })
+  }
+
+  /** Plays a few words typed on the switch recorded in `sounds`, on or off, so it can be chosen by ear. */
+  previewTypingSound(sounds: vscode.Uri): void {
+    const webview = this.view?.webview
+    if (webview) void webview.postMessage({ type: "keysPreview", sounds: webview.asWebviewUri(sounds).toString() })
+  }
+
+  /** A keystroke of the agent's landed: the page plays it, when typing sounds are on. Not logged. */
+  press(text: string): void {
+    if (this.typingSounds?.enabled) void this.view?.webview.postMessage({ type: "key", text })
   }
 
   /**
@@ -135,6 +179,8 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
       void vscode.commands.executeCommand("setContext", "aiPair.active", event.active)
       if (event.active) this.reveal()
     }
+    // Nothing plays until the programmer answers, so the question is brought into view.
+    if (event.type === "run" && event.phase === "confirm") this.reveal()
   }
 
   focusReply(): void {
@@ -166,6 +212,7 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
         this.showSelection(this.selection.ref())
         this.showOmpStatus(this.omp?.status() ?? this.ompStatus)
         this.showVoiceStatus(this.voice?.status() ?? this.voiceStatus)
+        if (this.typingSounds) this.showTypingSounds(this.typingSounds)
         return
       case "speed":
         this.speed.set(m.value)
@@ -205,11 +252,20 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
       case "ompModel":
         this.omp?.pickModel()
         return
+      case "ompThinking":
+        this.omp?.setThinking(m.level)
+        return
       case "voiceToggle":
         this.voice?.toggle()
         return
       case "voicePick":
         this.voice?.pickVoice()
+        return
+      case "typingSoundsToggle":
+        void vscode.commands.executeCommand("aiPair.toggleTypingSounds")
+        return
+      case "typingSoundPick":
+        void vscode.commands.executeCommand("aiPair.selectTypingSound")
         return
       case "draft":
         // Typing a reply pauses playback, the way a pair stops when you start talking.
@@ -235,7 +291,7 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
         c?.endSession()
         return
       case "runDecision":
-        c?.decideRun(m.id, m.run, m.remember)
+        c?.decideRun(m.id, m.run, m.allow)
         return
       case "open": {
         const uri = vscode.Uri.file(this.resolvePath(m.file))

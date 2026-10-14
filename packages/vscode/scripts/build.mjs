@@ -26,6 +26,8 @@ await esbuild.build({ ...common, entryPoints: ["src/extension.ts"], external: ["
 // The voice worker runs under bun or node, as its own ES module; it loads kokoro-js from wherever
 // it was found on the machine, so nothing of it is bundled in.
 await esbuild.build({ ...common, format: "esm", entryPoints: ["src/voiceWorker.ts"], outfile: "dist/voiceWorker.js" })
+// The Chatterbox worker is Python, run by uv beside the extension: copied as it is.
+fs.copyFileSync("src/chatterboxWorker.py", "dist/chatterboxWorker.py")
 // The relay tells agents the extension's version.
 const { version } = JSON.parse(fs.readFileSync("package.json", "utf8"))
 await esbuild.build({
@@ -35,3 +37,5 @@ await esbuild.build({
   define: { AI_PAIR_VERSION: JSON.stringify(version) },
   outfile: "dist/relay.js",
 })
+// The OMP the panel starts loads this, to send its model only the beats that played.
+await esbuild.build({ ...common, format: "esm", entryPoints: ["../relay/src/ompExtension.ts"], outfile: "dist/ompExtension.js" })

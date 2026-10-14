@@ -1,4 +1,5 @@
 import * as os from "node:os"
+import * as path from "node:path"
 import * as vscode from "vscode"
 import { Bridge, Controller } from "@ai-pair/core"
 import { discoveryDir } from "@ai-pair/protocol"
@@ -7,7 +8,18 @@ import { VsCodeEditor } from "./editor"
 import { NarrationPanel } from "./panel"
 import { OmpHost } from "./omp"
 import { registerServerProvider, setUpAgent, writeLauncher } from "./setup"
-import { VoiceEngine } from "./voice"
+import { VoiceEngine, type VoiceModel } from "./voice"
+
+/** The switches whose recordings ship in media/keys, one folder each, as the picker names them. */
+const SWITCHES: Record<string, { label: string; detail: string }> = {
+  holypanda: { label: "Holy Panda", detail: "Tactile: a deep, rounded thock" },
+  cream: { label: "NovelKeys Cream", detail: "Linear: smooth and creamy" },
+  alpaca: { label: "Alpaca", detail: "Linear: soft and quiet, a light clack" },
+  mxbrown: { label: "Cherry MX Brown", detail: "Tactile: the classic office board" },
+  topre: { label: "Topre", detail: "Rubber dome: muted and cushioned" },
+  buckling: { label: "Buckling Spring", detail: "IBM Model M: loud, crisp, old-school" },
+}
+
 /** Returned from `activate`, for integration tests. */
 export type Api = { controller: Controller; playDemo: () => Promise<void>; launcher: string; ready: Promise<void>; omp: OmpHost }
 
@@ -31,6 +43,7 @@ export function activate(context: vscode.ExtensionContext): Api {
   controller.setSpeed(speed.get())
   controller.setTiming(config().get("timing", {}))
   controller.setConfirmCommands(config().get("confirmCommands", true))
+  controller.setWorkAhead(config().get("workAheadBatches", 2))
 
   const bridge = new Bridge(controller, {
     dir: discoveryDir(),
@@ -41,8 +54,9 @@ export function activate(context: vscode.ExtensionContext): Api {
   const launcher = writeLauncher(context.extensionPath)
   const omp = new OmpHost(panel, {
     launcher,
+    extension: path.join(context.extensionPath, "dist", "ompExtension.js"),
     root: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-    config: () => ({ path: config().get("omp.path", ""), model: config().get("omp.model", "") }),
+    config: () => ({ path: config().get("omp.path", ""), model: config().get("omp.model", ""), thinking: config().get("omp.thinking", "") }),
     isPairActive: () => controller.isActive,
   })
   panel.omp = omp
@@ -50,17 +64,61 @@ export function activate(context: vscode.ExtensionContext): Api {
     extensionPath: context.extensionPath,
     config: () => ({
       enabled: config().get("voice.enabled", false),
+      model: config().get<VoiceModel>("voice.model", "kokoro"),
       voice: config().get("voice.voice", "af_heart"),
+      chatterboxVoice: config().get("voice.chatterboxVoice", ""),
       rate: config().get("voice.rate", 1),
+      pace: speed.get(),
       runtimePath: config().get("voice.runtimePath", ""),
       ompPath: config().get("omp.path", ""),
     }),
     setEnabled: (on) => void config().update("voice.enabled", on, vscode.ConfigurationTarget.Global),
-    setVoice: (id) => void config().update("voice.voice", id, vscode.ConfigurationTarget.Global),
+    setVoice: async (model, voice) => {
+      const global = vscode.ConfigurationTarget.Global
+      await config().update(model === "kokoro" ? "voice.voice" : "voice.chatterboxVoice", voice, global)
+      await config().update("voice.model", model, global)
+    },
   })
   panel.voice = voice
   controller.setVoice(voice)
   if (config().get("voice.enabled", false)) voice.setEnabled(true)
+  const typingSounds = () => {
+    const chosen = config().get("typingSounds.switch", "holypanda")
+    const key = chosen in SWITCHES ? chosen : "holypanda"
+    return {
+      enabled: config().get("typingSounds.enabled", false),
+      volume: Math.min(1, Math.max(0, config().get("typingSounds.volume", 0.5))),
+      sounds: vscode.Uri.joinPath(context.extensionUri, "media", "keys", key),
+      name: SWITCHES[key]!.label,
+    }
+  }
+  // Each switch is heard as the list moves to it, so it is chosen by ear.
+  const pickSwitch = async () => {
+    const current = config().get("typingSounds.switch", "holypanda")
+    const items = Object.entries(SWITCHES).map(([id, s]) => ({ id, label: s.label, description: id === current ? "current" : "", detail: s.detail }))
+    const quick = vscode.window.createQuickPick<(typeof items)[number]>()
+    quick.items = items
+    quick.placeholder = "Choose the keyboard switch you hear the agent type on (each plays as you move to it)"
+    quick.onDidChangeActive(([item]) => {
+      if (item) panel.previewTypingSound(vscode.Uri.joinPath(context.extensionUri, "media", "keys", item.id))
+    })
+    // No Promise.withResolvers: the extension still runs on VS Code builds with Node 20.
+    const picked = await new Promise<string | undefined>((resolve) => {
+      quick.onDidAccept(() => resolve(quick.selectedItems[0]?.id))
+      quick.onDidHide(() => resolve(undefined))
+      quick.show()
+      // Set once shown, so the current switch is the first one heard.
+      quick.activeItems = items.filter((i) => i.id === current)
+    })
+    quick.dispose()
+    if (!picked) return
+    const global = vscode.ConfigurationTarget.Global
+    await config().update("typingSounds.switch", picked, global)
+    // Choosing a switch is asking to hear it.
+    if (!config().get("typingSounds.enabled", false)) await config().update("typingSounds.enabled", true, global)
+  }
+  panel.showTypingSounds(typingSounds())
+  controller.setKeys(panel)
   registerServerProvider(context)
 
   context.subscriptions.push(
@@ -77,6 +135,10 @@ export function activate(context: vscode.ExtensionContext): Api {
     vscode.commands.registerCommand("aiPair.selectOmpModel", () => omp.pickModel()),
     vscode.commands.registerCommand("aiPair.toggleVoice", () => voice.toggle()),
     vscode.commands.registerCommand("aiPair.selectVoice", () => voice.pickVoice()),
+    vscode.commands.registerCommand("aiPair.toggleTypingSounds", () =>
+      config().update("typingSounds.enabled", !typingSounds().enabled, vscode.ConfigurationTarget.Global),
+    ),
+    vscode.commands.registerCommand("aiPair.selectTypingSound", pickSwitch),
     omp,
     voice,
     editor,
@@ -93,8 +155,11 @@ export function activate(context: vscode.ExtensionContext): Api {
       if (e.affectsConfiguration("aiPair.confirmCommands")) {
         controller.setConfirmCommands(config().get("confirmCommands", true))
       }
+      if (e.affectsConfiguration("aiPair.workAheadBatches")) controller.setWorkAhead(config().get("workAheadBatches", 2))
       if (e.affectsConfiguration("aiPair.voice.enabled")) voice.setEnabled(config().get("voice.enabled", false), true)
-      if (e.affectsConfiguration("aiPair.voice.voice")) panel.showVoiceStatus(voice.status())
+      if (e.affectsConfiguration("aiPair.voice.model")) voice.followModel(true)
+      if (e.affectsConfiguration("aiPair.voice.voice") || e.affectsConfiguration("aiPair.voice.chatterboxVoice")) panel.showVoiceStatus(voice.status())
+      if (e.affectsConfiguration("aiPair.typingSounds")) panel.showTypingSounds(typingSounds())
     }),
     vscode.commands.registerCommand("aiPair.playDemo", () => {
       if (!vscode.workspace.workspaceFolders?.length) {
