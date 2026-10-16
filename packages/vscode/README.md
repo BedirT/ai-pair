@@ -67,6 +67,12 @@ Start your agent in the folder that's open in VS Code — **Start** does
 that for you — and ask it to pair ("let's pair on…"). In Claude Code you
 can also run `/mcp__pair__start`.
 
+Your agent does the work first, in a private copy of the project, and
+records it in small stages that each run. A presenter, usually a quick
+subagent it starts, plays each stage in your editor and explains it while
+the agent works on the next, so you rarely wait. Your edits always stand:
+the agents build on them instead of undoing them.
+
 Beside **Start**, pick how the session pairs: **Build** (get it done,
 shown as it goes) or **Learn** (the agent teaches in small pieces), at
 three splits of who does the work: *Show me*, *Together* (a worked
@@ -98,6 +104,9 @@ the start, so you only say what the task is.
   real mechanical keyboard, softly, under the voice. The arrow beside it
   picks one of six keyboards, each playing as you move to it. Click the
   panel once so VS Code lets it make sound.
+- **Compare with prepared:** after a session, this button in the panel
+  shows the agent's prepared version beside the final code: what changed on
+  the way.
 
 **AI Pair: Play Demo Session** shows what it's like without an agent.
 

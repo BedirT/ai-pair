@@ -103,7 +103,9 @@ Layout, top to bottom:
    text; the programmer's replies as neutral bubbles on the right; commands
    as soft terminal rows with their outcome (✓ exit 0, ✕ exit 1, skipped,
    still running, which changes to how it ended when it does); turn changes,
-   interrupts and session starts and ends as faint dividers.
+   interrupts and session starts and ends as faint dividers. Each stage of
+   the author's work starts with a divider too, with its number and title
+   (_Stage 2 · Validation_), so the history reads as the steps of the work.
 
 Without a session, the band has no header: it says there's no session and
 how to start one, and after a session, how it ended, with the agent's
@@ -142,6 +144,14 @@ In every message, code spans that name a file (`game.ts`,
 `src/server.ts`) open it, found by name if it isn't a path from the
 workspace's root, and URLs open in the browser. File and code references are
 mono and quietly underlined, taking the link color only on hover.
+
+After a session with stages, the history's top holds one quiet button,
+**Compare with prepared** (also _AI Pair: Compare with Prepared_). It
+opens VS Code's multi-file diff: each file as the author prepared it, on the
+left, against the code as the session left it, on the right. So the
+programmer sees at a glance what changed on the way, by their own hand or at
+their request, without the agents having fought to undo it. It stays until
+the next session starts.
 
 **The panel follows whatever theme is set**, today's or a future one, without
 knowing any theme. Every color is one of the theme's tokens (the editor's and

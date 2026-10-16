@@ -1,25 +1,47 @@
 // What the agent reads: reports and files as text, with code as numbered lines instead of JSON
 // strings full of escapes. See "Reports" in PROTOCOL.md.
 
-import type { BatchError, BatchResult, Code, Event, Excerpt, FileContent, Report, RunResult } from "@ai-pair/protocol"
+import type {
+  AuthorEvent,
+  AuthorReport,
+  AuthorTool,
+  BatchError,
+  BatchResult,
+  Code,
+  Event,
+  Excerpt,
+  FileContent,
+  Report,
+  RunResult,
+  SetAside,
+  StageFile,
+  StageView,
+} from "@ai-pair/protocol"
 
-export type ReportingTool = "start" | "step" | "listen" | "end"
+export type ReportingTool = "join" | "step" | "listen" | "end"
+
+const MODE: Record<"build" | "learn", string> = {
+  build: "The programmer picked Build mode for this session. Its short page follows the guide below.",
+  learn: "The programmer picked Learn mode for this session: they're here to learn this. Its page follows the guide below, and where the two differ, the mode page wins.",
+}
 
 export function renderReport(report: Report, tool: ReportingTool): string {
   const sections: string[] = []
-  if (tool === "start") sections.push("The session has started.")
+  if (tool === "join") sections.push("You joined the session as its presenter.")
   if (report.voice === "on") {
     sections.push("Your voice is on: the programmer hears each `say`. Write it to be spoken: plain words, no markdown or backticks, code said the way a programmer says it out loud.")
   } else if (report.voice === "off") {
     sections.push("Your voice is off: the programmer reads each `say` beside the code while it plays. Keep it short; `backticks` for names.")
   }
-  if (report.mode === "build") {
-    sections.push("The programmer picked Build mode for this session. Its short page follows the guide below.")
-  } else if (report.mode === "learn") {
-    sections.push("The programmer picked Learn mode for this session: they're here to learn this. Its page follows the guide below, and where the two differ, the mode page wins.")
-  }
+  if (report.mode) sections.push(MODE[report.mode])
   for (const e of report.events) sections.push(renderEvent(e))
   for (const b of report.batches) sections.push(renderBatch(b))
+  for (const text of report.author ?? []) sections.push(`The author says:\n${quote(text)}`)
+  for (const brief of report.briefs ?? []) {
+    const notes = brief.notes.trim() ? `, with the author's notes:\n${quote(brief.notes)}` : ", with no notes."
+    sections.push(`Stage ${brief.number} began: ${brief.title}${notes}`)
+  }
+  if (report.stage) sections.push(renderStage(report.stage))
   if (report.submitted) sections.push(`Batch ${report.submitted.id} is ${report.submitted.status}.`)
   if (report.stillMs !== undefined) {
     sections.push(
@@ -43,6 +65,93 @@ export function renderReport(report: Report, tool: ReportingTool): string {
     sections.push("It's the programmer's turn: you're the navigator. Beats may only talk and `point`, and `listen` follows along.")
   }
   return sections.length > 0 ? sections.join("\n\n") : "Nothing to report."
+}
+
+export function renderAuthorReport(report: AuthorReport, tool: AuthorTool): string {
+  const sections: string[] = []
+  if (report.copy) {
+    sections.push(
+      `The session has started. Your private copy of the working directory is ${report.copy}: do all your work there, with your usual tools. The programmer's files change only as the presenter plays your stages.`,
+    )
+  }
+  if (report.mode) sections.push(MODE[report.mode])
+  if (report.recorded !== undefined) sections.push(`Recorded stage ${report.recorded}.`)
+  for (const e of report.events) sections.push(renderAuthorEvent(e))
+  const ended = report.events.some((e) => e.kind === "end")
+  if (report.ended && !ended) sections.push("The session has ended. Stop using the pair tools.")
+  if (report.ended || ended) return sections.join("\n\n")
+  if (report.stages === 0) sections.push("No stage recorded yet.")
+  else if (report.playing === 0) sections.push(`You've recorded ${report.stages} stages; none has begun playing yet.`)
+  else sections.push(`The editor is playing stage ${report.playing} of the ${report.stages} you've recorded.`)
+  if (tool === "wait" && report.events.length === 0) sections.push("Nothing new yet. Go on with your next stage, or call `wait` again.")
+  return sections.join("\n\n")
+}
+
+function renderAuthorEvent(e: AuthorEvent): string {
+  switch (e.kind) {
+    case "edit": {
+      const who = e.by === "programmer" ? "The programmer edited" : "The presenter edited, beyond your stage,"
+      const carried = e.carried
+        ? "It's carried into your copy: build on it, never revert it."
+        : "It collides with your own changes there, so it isn't in your copy: work it in by hand."
+      return `${who} ${e.file}. ${carried}\n${e.diff}`
+    }
+    case "told":
+      return `The presenter says:\n${quote(e.text)}`
+    case "set_aside":
+      return renderSetAside(e, "author")
+    case "caught_up":
+      return e.last
+        ? `Playback has caught up: stage ${e.stage}, your last, is all in, and the presenter is wrapping up with the programmer. Record another stage only if there's more to do.`
+        : `Playback has caught up: stage ${e.stage} is all in, and the programmer is waiting for your next stage. Record it soon; a small one is fine.`
+    case "presenter":
+      return e.present
+        ? "The presenter joined: it's playing your stages."
+        : "The presenter left: its connection closed. Get a new one going, as the guide says, or `join` and present the rest yourself."
+    case "end":
+      return `The session ended${e.summary ? `:\n${quote(e.summary)}` : "."}\nStop using the pair tools, and give the programmer a short summary in the conversation.`
+  }
+}
+
+/** The stage being played, and what's left of it. */
+function renderStage(view: StageView): string {
+  const head = `Stage ${view.number} of ${view.of}${view.last ? ", the last" : " so far"}: ${view.title}.`
+  const asides = (view.set_aside ?? []).map((a) => renderSetAside(a, "presenter"))
+  if (view.left.length === 0) {
+    const next = view.last
+      ? "It's the author's last stage: once it has played, wrap up with the programmer."
+      : "The next one begins once the author records it."
+    return [`${head} All of it is in once your queued batches play. ${next}`, ...asides].join("\n\n")
+  }
+  const legend = "What's left of it, as your queued batches leave the code: `+` lines to write, `-` lines to take out, with the lines around them as they read."
+  return [`${head} ${legend}`, ...view.left.map(renderStageFile), ...asides].join("\n\n")
+}
+
+/** A file's lines still to write or take out; a gap in the numbers of the lines around them is `…`. */
+function renderStageFile(f: StageFile): string {
+  const width = String(Math.max(0, ...f.lines.map((l) => l.number ?? 0))).length
+  const out = [`${f.file}:`]
+  let previous: number | undefined
+  for (const line of f.lines) {
+    if (line.number !== undefined) {
+      if (previous !== undefined && line.number > previous + 1) out.push(`${" ".repeat(width)}    …`)
+      previous = line.number
+    }
+    const mark = line.change === "write" ? "+" : line.change === "remove" ? "-" : " "
+    const number = line.number === undefined ? " ".repeat(width) : String(line.number).padStart(width)
+    out.push(`${number} ${mark} ${line.text}`.trimEnd())
+  }
+  if (f.more) out.push(`(${f.more} more ${f.more === 1 ? "line" : "lines"} to write or take out after these)`)
+  if (f.delete) out.push("(then the file is deleted)")
+  return out.join("\n")
+}
+
+function renderSetAside(a: SetAside, to: "author" | "presenter"): string {
+  const versions = `The stage had:\n${fenced(a.plan)}\nThe programmer's, kept:\n${fenced(a.kept)}`
+  if (to === "presenter") {
+    return `In ${a.file}, the programmer had already changed code stage ${a.stage} changes: their version stays, and the stage's lines there are dropped. ${versions}\nThe author was told. Mention it to the programmer if it matters.`
+  }
+  return `In ${a.file}, the programmer had already changed code your stage ${a.stage} changes: their version stays in the editor, and yours there was set aside. ${versions}\nBuild on theirs. If yours mattered, bring it back in a later stage, with notes on why.`
 }
 
 export function renderFile(content: FileContent): string {
@@ -112,8 +221,7 @@ function renderRun(run: RunResult): string {
   // Read out already: the agent's reply should build on these words, not say them again.
   const said = run.said ? `\nThe programmer already heard the editor read this out: "${run.said}" Go on from it; don't say it again.` : ""
   if (run.output === "") return `Ran \`${run.command}\`${shell}: ${outcome}, no output.${said}`
-  const fence = "`".repeat(Math.max(3, longestRun(run.output, "`") + 1))
-  return `Ran \`${run.command}\`${shell}: ${outcome}. Output${run.truncated ? ", its end" : ""}:\n${fence}\n${run.output}\n${fence}${said}`
+  return `Ran \`${run.command}\`${shell}: ${outcome}. Output${run.truncated ? ", its end" : ""}:\n${fenced(run.output)}${said}`
 }
 
 function renderExcerpt(x: Excerpt): string {
@@ -152,6 +260,12 @@ function quote(text: string): string {
     .split(/\r?\n/)
     .map((line) => `> ${line}`.trimEnd())
     .join("\n")
+}
+
+/** Text in a code fence longer than any run of backticks in it. */
+function fenced(text: string): string {
+  const fence = "`".repeat(Math.max(3, longestRun(text, "`") + 1))
+  return `${fence}\n${text}\n${fence}`
 }
 
 function longestRun(text: string, ch: string): number {

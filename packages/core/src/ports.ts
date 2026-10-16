@@ -61,6 +61,8 @@ export interface EditorPort {
   show(file: string): Promise<void>
   edit(file: string, offset: number, deleteLength: number, text: string, options: EditOptions): Promise<void>
   save(file: string): Promise<void>
+  /** Deletes the file, closing it in the editor: a stage that removes it, once its lines are out. */
+  deleteFile(file: string): Promise<void>
   renderCursor(cursor: CursorView | null, state: AgentState, focus: Focus): void
   renderPoint(point: { file: string; start: number; end: number } | null): void
   /** Brings the programmer's view back to what it follows. */
@@ -100,6 +102,10 @@ export type PanelEvent =
       /** With `confirm`: the program the command runs, which the programmer can allow for the session. */
       program?: string
     }
+  /** A stage of the author's starts playing: the panel marks where. */
+  | { type: "stage"; number: number; title: string }
+  /** The session ended with stages played: the prepared version can be compared with the code. */
+  | { type: "compare" }
 
 export interface PanelPort {
   post(event: PanelEvent): void
@@ -139,3 +145,35 @@ export interface KeysPort {
 
 /** A change to a document, in the coordinates of the text before it. */
 export type Change = { offset: number; deleteLength: number; text: string }
+
+/** A file a stage changes, as it reads before and after it: `undefined` where it doesn't exist. */
+export type StageChange = { file: string; before?: string; after?: string; binary?: true }
+
+/**
+ * The author's private copy of the workspace, where it does the real work, unseen. It records the
+ * copy as it goes, in snapshots: each stage is one. Files are named by their absolute paths in the
+ * workspace, never in the copy, except `root`.
+ */
+export interface CopyPort {
+  /** Where the author works: the copy's counterpart of the workspace folder it was made for. */
+  readonly root: string
+  /** The snapshot of the copy as it was made, the workspace as it was then. */
+  readonly base: string
+  /** Records the copy as it is now, and returns the snapshot's id. */
+  snapshot(): Promise<string>
+  /** The files that differ between two snapshots, with their texts, or only `binary` for a binary file. */
+  changes(from: string, to: string): Promise<StageChange[]>
+  /** Writes a snapshot's version of a binary file over the workspace's, or deletes it if the snapshot has none. */
+  restore(snapshot: string, file: string): Promise<void>
+  /**
+   * Brings a change made in the workspace, `before` to `after`, into the copy's file. Where the
+   * author has since changed the same lines, the author's version stays: false then, or if the file
+   * is gone from the copy.
+   */
+  carry(file: string, before: string, after: string): Promise<boolean>
+  /** Removes the copy. */
+  dispose(): Promise<void>
+}
+
+/** Makes a private copy of the workspace folder `root`, as it is on disk. */
+export type CopyFactory = (root: string) => Promise<CopyPort>

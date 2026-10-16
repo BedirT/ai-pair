@@ -1,7 +1,7 @@
 import * as os from "node:os"
 import * as path from "node:path"
 import * as vscode from "vscode"
-import { Bridge, Controller } from "@ai-pair/core"
+import { Bridge, Controller, createCopy } from "@ai-pair/core"
 import { discoveryDir } from "@ai-pair/protocol"
 import { playDemo } from "./demo"
 import { VsCodeEditor } from "./editor"
@@ -44,7 +44,7 @@ export function activate(context: vscode.ExtensionContext): Api {
     current: () => editor.programmerSelection(),
     ref: () => editor.selectionRef(),
   })
-  const controller = new Controller(editor, panel)
+  const controller = new Controller(editor, panel, createCopy)
   editor.controller = controller
   editor.onSelection = (ref) => panel.showSelection(ref)
   panel.controller = controller
@@ -137,8 +137,35 @@ export function activate(context: vscode.ExtensionContext): Api {
   panel.showTypingSounds(typingSounds())
   controller.setKeys(panel)
   registerServerProvider(context)
+  // The author's prepared version of each changed file, for the multi-diff compare command below.
+  // Its documents are told to refresh on every compare: a later session prepares other text under
+  // the same URIs, and VS Code would otherwise keep showing the first.
+  const preparedScheme = "aiPairPrepared"
+  const preparedChanged = new vscode.EventEmitter<vscode.Uri>()
+  const preparedProvider: vscode.TextDocumentContentProvider = {
+    onDidChange: preparedChanged.event,
+    // A file the author deleted has no text: the diff shows it emptied against the real file.
+    provideTextDocumentContent: (uri) => controller.prepared.find((p) => p.file === uri.fsPath)?.text ?? "",
+  }
 
   context.subscriptions.push(
+    preparedChanged,
+    vscode.workspace.registerTextDocumentContentProvider(preparedScheme, preparedProvider),
+    vscode.commands.registerCommand("aiPair.comparePrepared", () => {
+      const prepared = controller.prepared
+      if (prepared.length === 0) {
+        void vscode.window.showInformationMessage("AI Pair: nothing prepared to compare.")
+        return
+      }
+      // Each entry shows the prepared text on the left and the real file on the right.
+      const entries = prepared.map((p) => {
+        const fileUri = vscode.Uri.file(p.file)
+        const preparedUri = fileUri.with({ scheme: preparedScheme })
+        preparedChanged.fire(preparedUri)
+        return [fileUri, preparedUri, fileUri]
+      })
+      void vscode.commands.executeCommand("vscode.changes", "AI Pair: Prepared ↔ Final", entries)
+    }),
     { dispose: () => bridge.dispose() },
     vscode.window.onDidChangeWindowState((state) => {
       if (state.focused) bridge.focused()

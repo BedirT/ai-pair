@@ -171,30 +171,43 @@ export async function run(): Promise<void> {
   await c.end()
   console.log("another extension's reaction to the agent's typing is undone")
 
-  // An agent connecting the way a harness does: the launcher, over stdio, from the project folder.
+  // Agents connecting the way a harness does: the launcher, over stdio, from the project folder.
   await api.ready
-  const transport = new StdioClientTransport({
-    command: api.launcher,
-    cwd: root,
-    env: process.env as Record<string, string>,
-  })
-  const agent = new Client({ name: "integration", version: "0" })
-  await agent.connect(transport)
-  const tools = await agent.listTools()
-  assert.deepEqual(tools.tools.map((t) => t.name).sort(), ["end", "listen", "read", "start", "step"])
-  const tool = async (name: string, args: Record<string, unknown> = {}) => {
-    const result = await agent.callTool({ name, arguments: args })
-    const content = result.content as { type: string; text: string }[]
-    assert.ok(!result.isError, content[0]?.text ?? "tool error")
-    return content[0]!.text
+  const connect = async () => {
+    const client = new Client({ name: "integration", version: "0" })
+    await client.connect(new StdioClientTransport({ command: api.launcher, cwd: root, env: process.env as Record<string, string> }))
+    const tool = async (name: string, args: Record<string, unknown> = {}) => {
+      const result = await client.callTool({ name, arguments: args })
+      const content = result.content as { type: string; text: string }[]
+      assert.ok(!result.isError, content[0]?.text ?? "tool error")
+      return content[0]!.text
+    }
+    return { client, tool }
   }
+  const author = await connect()
+  const tools = await author.client.listTools()
+  assert.deepEqual(tools.tools.map((t) => t.name).sort(), ["end", "join", "listen", "read", "stage", "start", "step", "tell_author", "tell_presenter", "wait"])
   c.setSpeed(20)
-  await tool("start", { task: "relay test" })
-  await tool("step", { beats: [{ say: "Hello from the relay.", do: [{ move: { file: "relay.txt", line: 1, to: "line_end" } }, { type: "typed via the relay▌" }] }] })
-  const last = await tool("step", { beats: [] })
-  assert.match(last, /Batch \d+ completed/)
-  assert.equal(await buffer("relay.txt"), "typed via the relay")
-  await tool("end", { summary: "Bye." })
-  await agent.close()
+  // The author works in a real private copy; the programmer's file changes only as the stage plays.
+  const authored = await author.tool("start", { task: "relay test" })
+  const copy = /private copy of the working directory is (.+?): do all/.exec(authored)?.[1]
+  assert.ok(copy, authored)
+  fs.writeFileSync(path.join(copy, "relay.txt"), "typed via the relay\n")
+  await author.tool("stage", { title: "Greeting", notes: "One line.", last: true })
+  assert.ok(!fs.existsSync(file("relay.txt")))
+
+  const presenter = await connect()
+  assert.match(await presenter.tool("join"), /Stage 1 began: Greeting/)
+  await presenter.tool("step", { beats: [{ say: "Hello from the relay.", do: [{ write: { file: "relay.txt" } }] }] })
+  assert.match(await presenter.tool("step", { beats: [] }), /Batch \d+ completed/)
+  assert.equal(await buffer("relay.txt"), "typed via the relay\n")
+  await presenter.tool("end", { summary: "Bye." })
+  // The compare view's prepared side: what the author's stages left, kept once the copy is gone.
+  await until(() => api.controller.prepared.length > 0)
+  const prepared = await vscode.workspace.openTextDocument(vscode.Uri.file(file("relay.txt")).with({ scheme: "aiPairPrepared" }))
+  assert.equal(prepared.getText(), "typed via the relay\n")
+  assert.ok(!fs.existsSync(copy), "the copy is removed")
+  await presenter.client.close()
+  await author.client.close()
   console.log("relay session OK")
 }

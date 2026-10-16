@@ -27,6 +27,19 @@ export type SpanTarget = {
   through?: string
 }
 
+/**
+ * Lines of the current stage still to write or take out, by their text: from the first that
+ * contains `from` through the first after it that contains `through`. Without `from`, the first
+ * left in the file; without `through`, to the end of its stretch, up to the next line of the
+ * file the stage keeps. Without `file`, the cursor's file if the stage has anything left there,
+ * or else the first file that has.
+ */
+export type PlanTarget = {
+  file?: string
+  from?: string
+  through?: string
+}
+
 export type Action =
   | { move: MoveTarget }
   | { select: SpanTarget }
@@ -36,6 +49,10 @@ export type Action =
   | { delete: true }
   | { point: SpanTarget }
   | { run: string; wait?: number }
+  /** Writes lines of the current stage into the file, as `type` would. `fast`: as `type_fast`. */
+  | { write: PlanTarget & { fast?: boolean } }
+  /** Takes lines out of the current stage, without touching the file. */
+  | { drop: PlanTarget }
 
 /**
  * One moment of a batch: words and the actions they go with, played together. `say` starts as
@@ -45,7 +62,7 @@ export type Action =
 export type Beat = { say?: string; do?: Action[] }
 
 /** The keys that name an action. An action object has exactly one of them. */
-export const ACTION_KINDS = ["move", "select", "type", "type_fast", "delete", "point", "run"] as const
+export const ACTION_KINDS = ["move", "select", "type", "type_fast", "delete", "point", "run", "write", "drop"] as const
 
 /** The action keys an object has; more than one means actions were combined by mistake. */
 export function actionKinds(value: object): string[] {
@@ -87,6 +104,18 @@ export function spanProblem(span: SpanTarget): string | undefined {
   }
   if (!range && typeof span.text !== "string") return "Give the code: `text`, or `from` and `through`."
   if (span.text === "" || span.from === "" || span.through === "") return "The code's text can't be empty."
+  return undefined
+}
+
+/** What's wrong with a `write`'s or `drop`'s fields, if anything. */
+export function planProblem(target: unknown, needsFrom: boolean): string | undefined {
+  if (typeof target !== "object" || target === null) return "Give an object of texts: `{}` for the next lines left, or `from` and `through`."
+  const fields = target as Record<string, unknown>
+  for (const key of ["file", "from", "through"]) {
+    const value = fields[key]
+    if (value !== undefined && (typeof value !== "string" || value === "")) return `\`${key}\` is a text, not empty.`
+  }
+  if (needsFrom && fields.from === undefined) return "Give `from`: the text of the first line to drop, so nothing is dropped by mistake."
   return undefined
 }
 
@@ -248,6 +277,76 @@ export type Report = {
   /** With mode "learn": show = the agent drives and teaches, together = worked examples then the
    *  programmer tries the next one like it, try = the programmer drives, the agent navigates. */
   drive?: "show" | "together" | "try"
+  /** Stages that began since the last report, in order, each with the author's notes. */
+  briefs?: StageBrief[]
+  /** The stage being played, as the queued batches leave it: whenever it changed since the last report. */
+  stage?: StageView
+  /** What the author told the presenter since the last report. */
+  author?: string[]
+}
+
+export type StageBrief = { number: number; title: string; notes: string }
+
+/** A stage, and what's left of it. See "Stages" in PROTOCOL.md. */
+export type StageView = {
+  number: number
+  title: string
+  /** How many stages the author has recorded so far. */
+  of: number
+  /** The author recorded its last stage: no more are coming. */
+  last?: true
+  /** What's left to write and take out, by file: none once the stage's code is all in. */
+  left: StageFile[]
+  /** Code of the stage the programmer's edits overrode, theirs kept: with the first report after it happened. */
+  set_aside?: SetAside[]
+}
+
+/**
+ * What's left of a stage in a file, in the order of the file, with lines around it as they read.
+ * Lines in the file have their number; lines still to write have none, and go before the next line.
+ */
+export type StageFile = {
+  file: string
+  lines: { number?: number; text: string; change?: "write" | "remove" }[]
+  /** How many more lines are left to write or take out, after the ones shown. */
+  more?: number
+  /** The stage deletes the file, once its lines are out. */
+  delete?: true
+}
+
+export type SetAside = { file: string; stage: number; plan: string; kept: string }
+
+/**
+ * News for the author, who works out of sight in its copy while the presenter plays its stages.
+ * The programmer's words go to the presenter, which passes on what's the author's to answer.
+ */
+export type AuthorEvent =
+  /** An edit in the programmer's editor that wasn't the stage's code: `carried` into the copy, or not where it collided with the author's own changes. */
+  | { kind: "edit"; file: string; diff: string; by: "programmer" | "presenter"; carried: boolean }
+  /** What the presenter told the author. */
+  | { kind: "told"; text: string }
+  | ({ kind: "set_aside" } & SetAside)
+  /**
+   * Playback has caught up with the recorded stages: the programmer waits on the next, unless
+   * `last`: it was the last, and the presenter wraps up.
+   */
+  | { kind: "caught_up"; stage: number; last?: true }
+  | { kind: "presenter"; present: boolean }
+  | { kind: "end"; summary?: string }
+
+export type AuthorReport = {
+  /** With `start`: where the author works, its private copy of the working directory. */
+  copy?: string
+  /** With `stage`: the number of the stage it recorded. */
+  recorded?: number
+  /** The stage being played in the editor, 0 before the first, and how many are recorded. */
+  playing: number
+  stages: number
+  events: AuthorEvent[]
+  /** With `start`, as in `Report`. */
+  mode?: "build" | "learn"
+  drive?: "show" | "together" | "try"
+  ended?: true
 }
 
 export type FileContent = {

@@ -28,8 +28,8 @@ const LEARN_DRIVE: Record<string, string> = {
   try: `**Who does the work: mostly the programmer.** Near the start, after the first tiny worked example if one is needed, ask them to take the turn (My turn, in the panel) and set one small goal at a time. You navigate: say what to try next, watch with \`listen\`, point and comment as they type. Hint before answers. Type something yourself only to show a new pattern once, or when asked; if they're stuck twice on one step, show that step, then hand the keyboard back.`,
 }
 
-/** The session's mode page, from the `start` report; undefined when no mode was reported. */
-export function modeGuide(report: Report): string | undefined {
+/** The session's mode page, from the `start` or `join` report; undefined when no mode was reported. */
+export function modeGuide(report: Pick<Report, "mode" | "drive">): string | undefined {
   if (report.mode === "build") return BUILD
   if (report.mode !== "learn") return undefined
   return `# This session: Learn\n\n${LEARN_CORE}\n\n${LEARN_DRIVE[report.drive ?? "show"]}`

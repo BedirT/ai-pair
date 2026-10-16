@@ -286,6 +286,8 @@ export function panelHtml(cspSource: string): string {
   body.vscode-high-contrast :is(.you, .run), body.vscode-high-contrast-light :is(.you, .run) { outline: 1px solid var(--border); }
   .divider { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--faint); }
   .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--hair); }
+  /* The prepared-compare offer sits on its own, centered, like a divider with something to press. */
+  .compare { display: flex; justify-content: center; }
 
   code { font-family: var(--mono); font-size: 0.88em; padding: 1px 4px; border-radius: 4px; background: var(--soft); color: inherit; }
   a { color: var(--vscode-textLink-foreground); cursor: pointer; text-decoration: none; }
@@ -425,6 +427,7 @@ export function panelHtml(cspSource: string): string {
   let current = null;   // text of the current message
   let reading = null;   // { ms, elapsed, last }
   let pointed = null;   // a link to the code the agent just pointed at, shown with the message about it
+  let compareBtn = null;   // the prepared-compare offer, while the session's stages stand to compare
 
   const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   // A code span that names a file, like \`game.ts\` or \`src/game.ts\`, becomes a link that opens it.
@@ -450,6 +453,17 @@ export function panelHtml(cspSource: string): string {
   function addAgent(html) { return add(entry("agent", html)); }
 
   function addDivider(text) { add(entry("divider")).textContent = text; }
+  // The prepared-compare offer: one button, however many times the session ends with stages played.
+  function showCompare() {
+    if (compareBtn) return;
+    const el = entry("compare");
+    const b = document.createElement("button");
+    b.className = "soft";
+    b.textContent = "Compare with prepared";
+    b.onclick = () => vscode.postMessage({ type: "command", command: "aiPair.comparePrepared" });
+    el.append(b);
+    compareBtn = add(el);
+  }
 
   function refLink(ref) {
     const a = document.createElement("a");
@@ -901,6 +915,8 @@ export function panelHtml(cspSource: string): string {
           ui.now.textContent = "Waiting for the agent…";
           ui.ref.innerHTML = "";
           pointed = null;
+          // A new session prepares nothing yet: last session's compare offer goes with it.
+          if (compareBtn) { compareBtn.remove(); compareBtn = null; }
           addDivider("Session started" + (e.task ? ": " + e.task : ""));
           ui.idle.classList.remove("ended");
           setActive(true);
@@ -921,6 +937,8 @@ export function panelHtml(cspSource: string): string {
       case "state": setState(e); return;
       case "user": interruptNote = false; addYou(e.text, e.ref); return;
       case "interrupt": addDivider("You interrupted"); interruptNote = true; syncStatus(); return;
+      case "stage": addDivider("Stage " + e.number + " · " + e.title); return;
+      case "compare": showCompare(); return;
       case "turn":
         addDivider(e.to === "user" ? "You took the turn" : "You handed the turn back");
         if (e.message || e.ref) addYou(e.message, e.ref);
