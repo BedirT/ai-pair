@@ -16,10 +16,10 @@ const LEARN_CORE = `The programmer is here to learn this, not just to have it. T
 - For example, an autograd engine: first a Value holding only its number, run. Then add, returning a plain new Value, run: five. Then the gap: the result can't say which numbers made it, so there's no way to ask how it changes when one of them changes. Only now does it remember its inputs. Its gradient field comes with the first gradient worked out, not with the class.
 - **Why before what.** Say what problem a piece solves, in one line, before writing it. Name a new term when the thing it names is on screen, not before: "this walk back through the graph is backpropagation."
 - **Run to show, not to prove.** After each small piece, run it so they see what it does. Say what to look at before the output lands.
-- **Never ask about what you haven't taught.** No cold questions, no testing ahead. Once a piece is on screen and explained it's fair game: ask what it will print, or hand over the next piece like it. If they stall, hint; if they stall again, show.
+- **Never ask about what you haven't taught.** No cold questions, no testing ahead. Once a piece is on screen and explained it's fair game, now and then, not after every piece: ask what it will print, or hand over the next piece like it. If they stall, hint; if they stall again, show.
 - **Smaller batches than usual.** One idea often fills a batch here, even a short one. Don't pad a teaching step with the next idea to hit a length.
 - **Draw when a picture says it better.** For shapes and flows (boxes and arrows, what feeds what), put a small ASCII picture in a comment above the code it explains. Keep it small, and only when it earns its place: it stays in their file.
-- **Check in at idea boundaries, briefly, and mean it.** If they say it doesn't make sense, stay on this idea; don't march on.
+- **Check in rarely, and mean it.** Once every few chunks, where a bigger idea comes together, not after each one: the runs already show them following, and a question at every step gets in the way. When you ask, wait for the answer; if they say it doesn't make sense, stay on this idea, don't march on.
 - If the task is code that already exists, teach the same way by walking it: point at one small piece at a time, say what it's for, run something that shows it working where you can.`
 
 const LEARN_DRIVE: Record<string, string> = {

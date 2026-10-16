@@ -16,7 +16,9 @@
   never undo them as drift. Each stage starts with its own divider in
   the panel's history. A change in a stage plays as one piece: a blank
   line next to it is never split off to be typed on its own. When the
-  presenter asks you something, it stops and listens for your answer.
+  presenter asks you something, it stops and listens for your answer;
+  in Learn mode it asks only now and then, where a bigger idea comes
+  together.
 - **Compare with prepared.** After a session with stages, a button in
   the panel (also *AI Pair: Compare with Prepared*) opens the agent's
   prepared version beside the final code, so you see at a glance what
