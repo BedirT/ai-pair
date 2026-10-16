@@ -9,8 +9,8 @@ A session has two agents, which the programmer meets as one partner. The
 **author** does the work, out of sight, in a private copy of the project, and
 records it in [stages](#stages). The **presenter** plays each stage in the
 programmer's editor at a human pace, explaining it, and answers the
-programmer. Usually the presenter is a subagent the author starts on a fast
-model; an agent without subagents does both itself, recording all its stages
+programmer. Usually the presenter is a subagent the author starts on its own
+model with thinking off; an agent without subagents does both itself, recording all its stages
 first. Most of this document is about the presenter's side, the playing.
 
 This document covers only what the agents can do and observe. How the extension

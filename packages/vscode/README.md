@@ -68,8 +68,8 @@ that for you — and ask it to pair ("let's pair on…"). In Claude Code you
 can also run `/mcp__pair__start`.
 
 Your agent does the work first, in a private copy of the project, and
-records it in small stages that each run. A presenter, usually a quick
-subagent it starts, plays each stage in your editor and explains it while
+records it in small stages that each run. A presenter, usually a subagent
+it starts on the same model with thinking off, plays each stage in your editor and explains it while
 the agent works on the next, so you rarely wait. Your edits always stand:
 the agents build on them instead of undoing them.
 

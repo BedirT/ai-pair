@@ -193,7 +193,9 @@ server's `start` prompt (in Claude Code: `/mcp__pair__start`). The agent
 calls `start`, which returns the [author guide](AUTHOR_GUIDE.md) and the
 mode's page (`modeGuide.ts` in the relay, from the mode in the first
 report) along with the first report. The guide has the author start its
-presenter at once, a subagent on a fast model where the harness has them,
+presenter at once, a subagent on its own model with thinking off where the
+harness has them (OMP's `pair-presenter` agent, which the setup writes beside
+OMP's MCP configuration),
 whose `join` returns the [presenter guide](PRESENTER_GUIDE.md) and the same
 mode page.
 

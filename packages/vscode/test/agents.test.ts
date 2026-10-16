@@ -86,6 +86,17 @@ describe("OMP", () => {
     expect(read(".omp", "profiles", "work", "agent", "mcp.json")).toContain(LAUNCHER)
     expect(agent("omp").isSetUp(host, LAUNCHER)).toBe(true)
   })
+
+  it("adds the presenter agent, on the author's model with thinking off, to a setup that lacks it", async () => {
+    put(JSON.stringify({ mcpServers: { pair: { command: LAUNCHER, args: [], enabled: true, timeout: 0 } } }), ".omp", "agent", "mcp.json")
+    expect(agent("omp").isSetUp(host, LAUNCHER)).toBe(false)
+    await agent("omp").setUp(host, LAUNCHER)
+    const presenter = read(".omp", "agent", "agents", "pair-presenter.md")
+    expect(presenter).toMatch(/^name: pair-presenter$/m)
+    expect(presenter).toMatch(/^thinkingLevel: off$/m)
+    expect(presenter).not.toMatch(/^model:/m)
+    expect(agent("omp").isSetUp(host, LAUNCHER)).toBe(true)
+  })
 })
 
 describe("Claude Code", () => {

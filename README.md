@@ -148,8 +148,9 @@ agent (Claude Code, …) ── stdio MCP ──▶ pair-mcp ── local WebSoc
 
 Your agent does the real work first, at its own pace, in a private copy of
 your project, and records it in **stages**: small steps that each run on
-their own, with notes on why. A presenter, usually a quick subagent it
-starts, plays each stage in your editor while the agent works on the next,
+their own, with notes on why. A presenter, usually a subagent it starts on
+the same model with thinking off, plays each stage in your editor while the
+agent works on the next,
 so playback almost never waits on its thinking. Your edits always stand:
 both treat them as yours, build on them, and never undo them. The presenter
 handles small requests itself and passes bigger ones to the agent.

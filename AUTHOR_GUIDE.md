@@ -31,10 +31,11 @@ At once after `start`, before you read anything, since the programmer is
 waiting from the moment they asked:
 
 - **If you can start subagents,** start one as the presenter, in the
-  background, on a fast model, and don't wait for it: it runs until the
-  session ends. In Claude Code, that's the Agent tool with
-  `model: "haiku"` and `run_in_background: true`. Give it this prompt, with
-  the task in it:
+  background, on your own model with its thinking off, and don't wait for
+  it: it runs until the session ends. In OMP, that's the task tool with
+  agent `pair-presenter`, which the AI Pair setup installs for this. In
+  Claude Code, it's the Agent tool with `run_in_background: true` and no
+  `model`, so it runs on yours. Give it this prompt, with the task in it:
 
   > You present a live AI Pair pairing session in the programmer's editor.
   > The task: <the task>. Call the `join` tool of the pair server now, then

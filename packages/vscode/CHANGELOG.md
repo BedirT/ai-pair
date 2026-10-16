@@ -6,8 +6,9 @@
   now does the real work at its own pace in a private copy of your
   project, with no pairing rules slowing it down, and records it in
   stages: small steps that each run on their own, with notes on why. A
-  presenter, a quick subagent it starts (or the agent itself, if it has
-  no subagents), plays each stage in your editor and explains it while
+  presenter, a subagent it starts on its own model with thinking off
+  (or the agent itself, if it has no subagents; for OMP, the setup adds
+  a `pair-presenter` agent for this), plays each stage in your editor and explains it while
   the agent works on the next, so you almost never wait on its thinking.
   The presenter types a stage's lines with a new `write` action, handles
   your small requests itself, and passes bigger ones to the agent. Your
