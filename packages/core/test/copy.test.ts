@@ -128,6 +128,19 @@ describe("private copy", { timeout: 30_000 }, () => {
     expect(binary?.after).toBeUndefined()
   })
 
+  it("snapshots when .gitignore names a linked folder without a trailing slash", async () => {
+    const { dir } = await makeRepo()
+    await fs.writeFile(path.join(dir, ".gitignore"), "node_modules/\n.venv\n")
+    await fs.mkdir(path.join(dir, ".venv", "bin"), { recursive: true })
+    await fs.writeFile(path.join(dir, ".venv", "bin", "python"), "#!/bin/sh\n")
+    const copy = await track(await createCopy(dir))
+    expect((await fs.lstat(path.join(copy.root, ".venv"))).isSymbolicLink()).toBe(true)
+    await fs.writeFile(path.join(copy.root, "new.txt"), "new\n")
+
+    const staged = await copy.changes(copy.base, await copy.snapshot())
+    expect(staged.map((change) => path.basename(change.file)).sort()).toEqual(["new.txt"])
+  })
+
   it("maps a subfolder workspace to its counterpart in the copy", async () => {
     const { dir } = await makeRepo()
     await fs.mkdir(path.join(dir, "sub"), { recursive: true })

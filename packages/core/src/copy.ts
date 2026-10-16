@@ -131,10 +131,26 @@ export const createCopy: CopyFactory = async (root) => {
   let queue: Promise<void> = Promise.resolve()
   let previous: string | undefined
 
+  // Asked at each snapshot, since the author may change `.gitignore` in the copy.
+  const ignoredLinks = async (): Promise<Set<string>> => {
+    if (linked.size === 0) return new Set()
+    try {
+      // `-z` works only with `--stdin`, so paths come one per line; quotepath off keeps them as given.
+      const out = await gitText(copyDir, ["-c", "core.quotepath=off", "check-ignore", "--no-index", "--", ...linked])
+      return new Set(out.split("\n").filter((line) => line !== ""))
+    } catch (error) {
+      // check-ignore exits with 1 when none of the paths is ignored.
+      if (typeof error === "object" && error !== null && "code" in error && error.code === 1) return new Set()
+      throw error
+    }
+  }
+
   const takeSnapshot = async (): Promise<string> => {
     // Linked folders are excluded by name: `.gitignore` patterns like `node_modules/` match only
-    // folders, not symlinks to them. Linked files are ignored as before, by the same patterns.
-    const excludes = [...linked].map((rel) => `:(exclude,literal)${rel}`)
+    // folders, not symlinks to them. Those `.gitignore` already covers, by a pattern like `.venv`,
+    // are left out of the excludes: `git add` refuses a pathspec that names an ignored path.
+    const ignored = await ignoredLinks()
+    const excludes = [...linked].filter((rel) => !ignored.has(rel)).map((rel) => `:(exclude,literal)${rel}`)
     await gitText(copyDir, ["-c", "core.hooksPath=/dev/null", "add", "-A", "--", ".", ...excludes], {
       GIT_INDEX_FILE: indexPath,
     })
@@ -287,7 +303,14 @@ export const createCopy: CopyFactory = async (root) => {
     }
   }
 
-  const base = await takeSnapshot()
+  let base: string
+  try {
+    base = await takeSnapshot()
+  } catch (error) {
+    // A copy that can't take its first snapshot is never handed out, so nothing else would remove it.
+    await dispose()
+    throw error
+  }
 
   const port: CopyPort = {
     root: copyRoot,
