@@ -52,6 +52,16 @@ describe("stage plan", () => {
     expect(pending(left(plan, w))).toEqual(["-b", "+B", "+d"])
   })
 
+  it("keeps a change whole when the diff could split a blank line off it", async () => {
+    const before = "def f():\n    return 1\n\n\nf()\n"
+    const w = workspace(before)
+    const plan = new StagePlan([stage(1, before, "def f():\n    return 1\n\ndef g():\n    return 2\n\n\nf()\n")])
+    await plan.advance(w.read, w.lines)
+    // One stretch to write, so a `write` takes the method and its blank line together.
+    const kinds = (left(plan, w)?.items ?? []).map((i) => (i.kind === "write" ? "+" : " ")).join("")
+    expect(kinds).toBe("   +++  ")
+  })
+
   it("counts a line typed as is, in its place, as written", async () => {
     const w = workspace("a\nc\n")
     const plan = new StagePlan([stage(1, "a\nc\n", "a\nb\nc\n")])

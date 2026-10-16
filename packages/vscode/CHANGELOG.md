@@ -14,7 +14,9 @@
   your small requests itself, and passes bigger ones to the agent. Your
   edits always stand: both agents treat them as yours and build on them,
   never undo them as drift. Each stage starts with its own divider in
-  the panel's history.
+  the panel's history. A change in a stage plays as one piece: a blank
+  line next to it is never split off to be typed on its own. When the
+  presenter asks you something, it stops and listens for your answer.
 - **Compare with prepared.** After a session with stages, a button in
   the panel (also *AI Pair: Compare with Prepared*) opens the agent's
   prepared version beside the final code, so you see at a glance what

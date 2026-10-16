@@ -180,12 +180,10 @@ export class StagePlan {
         deleted: target === undefined,
       }
       let at = 0
-      for (const part of diffArrays(current, target === undefined ? [] : fileLines(target).lines)) {
-        for (const text of part.value) {
-          if (part.added) fp.lines.push({ text })
-          else if (part.removed) fp.remove.set(ids[at++]!, text)
-          else fp.lines.push({ text, id: ids[at++]! })
-        }
+      for (const op of lineDiff(current, target === undefined ? [] : fileLines(target).lines)) {
+        if (op.kind === "add") fp.lines.push({ text: op.text })
+        else if (op.kind === "remove") fp.remove.set(ids[at++]!, op.text)
+        else fp.lines.push({ text: op.text, id: ids[at++]! })
       }
       files.set(file, fp)
     }
@@ -394,4 +392,52 @@ function realign(fp: FilePlan, lines: string[], ids: readonly number[]): void {
       else kept[k++]!.id = ids[n++]!
     }
   }
+}
+
+type DiffOp = { kind: "keep" | "add" | "remove"; text: string }
+
+/**
+ * The lines that turn `before` into `after`, with each change slid along the equal lines next to it
+ * when that joins it to another change. The diff alone can match a blank line on the far side of a
+ * kept one and split a change in two around it: a method added before two blank lines comes out as
+ * the method, then a kept blank line, then one more blank line added on its own. `write` plays
+ * each piece separately, so the presenter's next `write` would type just that blank line.
+ */
+function lineDiff(before: string[], after: string[]): DiffOp[] {
+  const ops: DiffOp[] = []
+  for (const part of diffArrays(before, after)) {
+    const kind = part.added ? "add" : part.removed ? "remove" : "keep"
+    for (const text of part.value) ops.push({ kind, text })
+  }
+  const changed = (i: number) => i >= 0 && i < ops.length && ops[i]!.kind !== "keep"
+  // Sliding a run of one kind over equal kept lines only changes which of the equal lines are the
+  // kept ones: the texts stay where they are, so both files still read the same. Only the kinds move.
+  const relabel = (from: number, to: number, kind: DiffOp["kind"]) => {
+    for (let i = from; i < to; i++) ops[i]!.kind = kind
+  }
+  let s = 0
+  while (s < ops.length) {
+    const kind = ops[s]!.kind
+    let e = s + 1
+    while (e < ops.length && ops[e]!.kind === kind) e++
+    if (kind === "keep" || changed(s - 1) || changed(e)) {
+      s = e
+      continue
+    }
+    let joined = false
+    for (let k = 1; !joined && s - k >= 0 && ops[s - k]!.kind === "keep" && ops[s - k]!.text === ops[e - k]!.text; k++) {
+      if (!changed(s - k - 1)) continue
+      relabel(e - k, e, "keep")
+      relabel(s - k, e - k, kind)
+      joined = true
+    }
+    for (let k = 1; !joined && e + k - 1 < ops.length && ops[e + k - 1]!.kind === "keep" && ops[e + k - 1]!.text === ops[s + k - 1]!.text; k++) {
+      if (!changed(e + k)) continue
+      relabel(s, s + k, "keep")
+      relabel(s + k, e + k, kind)
+      joined = true
+    }
+    s = e
+  }
+  return ops
 }

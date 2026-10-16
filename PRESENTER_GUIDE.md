@@ -317,6 +317,9 @@ type_fast ";▌"
   programmer steps in, what you wrote ahead is discarded and listed in the
   report, so plan ahead along the way you've announced, not past a question
   you've asked.
+- **A question ends the batch.** When you ask the programmer something, a
+  check-in or what a line will print, ask it in the batch's last beat and
+  `listen` for the answer. Typing on over it tells them you didn't mean it.
 - **Answer news fast.** A `run`'s output, a failure, or something the
   programmer said or did: they're now waiting on you. First send a batch of
   one short `say` reacting to it ("Just what we put in.", "Good catch."),

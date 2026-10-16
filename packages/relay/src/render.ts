@@ -120,7 +120,7 @@ function renderStage(view: StageView): string {
   if (view.left.length === 0) {
     const next = view.last
       ? "It's the author's last stage: once it has played, wrap up with the programmer."
-      : "The next one begins once the author records it."
+      : "The next one begins once the author records it: `listen` returns when it does."
     return [`${head} All of it is in once your queued batches play. ${next}`, ...asides].join("\n\n")
   }
   const legend = "What's left of it, as your queued batches leave the code: `+` lines to write, `-` lines to take out, with the lines around them as they read."

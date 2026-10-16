@@ -229,7 +229,7 @@ export const TOOLS = {
   },
   wait: {
     description:
-      "Wait for news: edits in the programmer's editor (carried into your copy), what the presenter tells you, code of yours the programmer's own edits overrode, playback catching up with your stages, or the session ending. Call it when you have nothing to work on: during a session, never end your turn. If nothing happened in time, it says so: call it again.",
+      "For the author only; the presenter waits with `listen`. Wait for news: edits in the programmer's editor (carried into your copy), what the presenter tells you, code of yours the programmer's own edits overrode, playback catching up with your stages, or the session ending. Call it when you have nothing to work on: during a session, never end your turn. If nothing happened in time, it says so: call it again.",
     inputSchema: {},
   },
   tell_presenter: {
@@ -271,7 +271,7 @@ An empty batch waits until your queued batches finish, or a \`run\`'s output or 
   },
   listen: {
     description:
-      "Wait for the programmer. First collects the reports of your queued batches, then returns when the programmer does something: a message (with the code they had selected, if any), an edit of theirs, a turn change, or ending the session; or when a new stage begins, or the author tells you something. Call it whenever you're done or waiting: during a session, never end your turn. During the programmer's turn you're the navigator (beats may only talk and `point`), and `listen` also returns shortly after they stop typing, so you can comment. If nothing happened in time, it says so: call it again.",
+      "For the presenter only; the author waits with `wait`. Wait for the programmer. First collects the reports of your queued batches, then returns when the programmer does something: a message (with the code they had selected, if any), an edit of theirs, a turn change, or ending the session; or when a new stage begins, or the author tells you something. Call it whenever you're done or waiting: during a session, never end your turn. During the programmer's turn you're the navigator (beats may only talk and `point`), and `listen` also returns shortly after they stop typing, so you can comment. If nothing happened in time, it says so: call it again.",
     inputSchema: {},
   },
   end: {
