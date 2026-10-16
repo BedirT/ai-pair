@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest"
 import type { Report } from "@ai-pair/protocol"
 import { renderFile, renderReport } from "../src/render"
+import { modeGuide } from "../src/modeGuide"
 
 const report = (r: Partial<Report>): Report => ({ batches: [], events: [], turn: "agent", ...r })
 
@@ -175,5 +176,37 @@ describe("saving", () => {
     const text = renderReport(report({ batches: [{ id: 3, status: "completed", unsaved: [{ file: "a.ts", error: "the file on disk is newer" }] }] }), "step")
     expect(text).toMatch(/Couldn't save a\.ts \(the file on disk is newer\)/)
     expect(text).toMatch(/file on disk doesn't/)
+  })
+})
+
+describe("modes", () => {
+  it("names the session's mode in the start report and points at its page", () => {
+    expect(renderReport(report({ mode: "build" }), "start")).toMatch(/Build mode/)
+    const learn = renderReport(report({ mode: "learn", drive: "together" }), "start")
+    expect(learn).toMatch(/Learn mode/)
+    // The mode refines the guide, so the agent is told which wins.
+    expect(learn).toMatch(/mode page wins/)
+    expect(renderReport(report({}), "step")).not.toMatch(/mode/)
+  })
+
+  it("gives each learn split its own who-does-the-work words, over one shared core", () => {
+    const show = modeGuide(report({ mode: "learn", drive: "show" })) ?? ""
+    const together = modeGuide(report({ mode: "learn", drive: "together" })) ?? ""
+    const drive = modeGuide(report({ mode: "learn", drive: "try" })) ?? ""
+    // Shared teaching core: one idea at a time, never a cold question.
+    for (const page of [show, together, drive]) {
+      expect(page).toMatch(/One idea per chunk/)
+      expect(page).toMatch(/Never ask about what you haven't taught/)
+    }
+    // The split is who types, and each page carries only its own split.
+    expect(show).toMatch(/Type everything/)
+    expect(show).not.toMatch(/worked example/)
+    expect(together).toMatch(/worked example/)
+    expect(together).toMatch(/take the turn/)
+    expect(drive).toMatch(/mostly the programmer/)
+    expect(drive).not.toMatch(/worked example, explained as it lands\. Then/)
+    // An unknown or absent mode has no page, so older editors change nothing.
+    expect(modeGuide(report({}))).toBeUndefined()
+    expect(modeGuide(report({ mode: "build" }))).toMatch(/Build/)
   })
 })

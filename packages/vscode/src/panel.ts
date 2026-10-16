@@ -4,47 +4,51 @@ import * as vscode from "vscode"
 import type { Controller, KeysPort, PanelEvent, PanelPort, Ref, SharedSelection } from "@ai-pair/core"
 import { panelHtml } from "./panelHtml"
 
-/**
- * How the built-in OMP conversation is doing, as the panel shows it. `activity`: what OMP is doing
- * with its own tools right now, like reading a file, in its own words. `thinking`: how hard the
- * model thinks, one of `thinkingLevels`, the levels the model offers.
- */
-export type OmpStatus = {
-  state: "off" | "starting" | "ready" | "busy"
-  model?: string
-  thinking?: string
-  thinkingLevels?: string[]
-  detail?: string
-  activity?: string
+/** What the panel asks of its Start button: run the chosen agent in a terminal. Which agent is
+ *  chosen rarely, by command, so the panel doesn't carry a picker for it. */
+export type StarterPort = {
+  start(): void
 }
 
-/** One line of the OMP conversation in the panel's history. `id` ties a reply's updates together. */
-export type OmpChat = { id: string; role: "assistant" | "note" | "tool"; text: string }
+/** A pairing mode as the panel shows it: its id lights the toggle, its word sits beside the status. */
+export type ModeChoice = { id: string; label: string }
 
-/** What the panel asks of the built-in OMP conversation, when there is one. */
-export type OmpPort = {
-  start(): void
-  stop(): void
-  abort(): void
-  newChat(): void
-  pickModel(): void
-  setThinking(level: string): void
-  prompt(text: string): void
-  status(): OmpStatus
+/** What the panel asks of the pairing mode: set the next session's, and read it back. */
+export type ModePort = {
+  set(id: string): void
+  choice(): ModeChoice
 }
 
 /** How the voice is doing, as the panel shows it. `ready` is when words are actually spoken. */
 export type VoiceStatus = { enabled: boolean; state: "off" | "loading" | "ready" | "error"; voice: string; detail?: string }
 
+/** One voice the panel's menu offers: its friendly name, a short tag, whether choosing it
+ *  fetches its engine first, and its shipped sample file when it has one. The raw voice id
+ *  stays out of the friendly parts; nobody picks by that. */
+export type VoiceRow = { model: string; voice: string; name: string; tag: string; download?: boolean; preview?: string }
+
+/** Everything the voice menu shows: the current pick, the two engines' voices, the second's note. */
+export type VoiceChoices = { current: { model: string; voice: string }; kokoro: VoiceRow[]; chatterbox: VoiceRow[]; chatterboxNote: string }
+
 /** What the panel asks of the voice. */
 export type VoicePanelPort = {
   toggle(): void
-  pickVoice(): void
   status(): VoiceStatus
+  choices(): VoiceChoices
+  choose(model: string, voice: string): void
+  /** Offer a recording of the programmer's own to sound like (a file picker). */
+  chooseRecording(): void
 }
 
 /** The typing sounds' settings, as the panel plays them. `sounds`: the folder of the switch's recordings; `name`: the switch's. */
 export type TypingSounds = { enabled: boolean; volume: number; sounds: vscode.Uri; name: string }
+
+/** What the panel asks of the keyboard switches: the list for its menu, a pick, a preview by ear. */
+export type SwitchPort = {
+  choices(): { current: string; items: Array<{ id: string; name: string; tag: string }> }
+  set(id: string): void
+  preview(id: string): void
+}
 
 /** Messages from the webview. */
 type FromPanel =
@@ -64,33 +68,31 @@ type FromPanel =
   | { type: "command"; command: string }
   | { type: "speed"; value: number }
   | { type: "runDecision"; id: number; run: boolean; allow?: "program" | "all" }
-  | { type: "ompStart" }
-  | { type: "ompStop" }
-  | { type: "ompAbort" }
-  | { type: "ompNew" }
-  | { type: "ompModel" }
-  | { type: "ompThinking"; level: string }
+  | { type: "agentStart" }
+  | { type: "modeSet"; id: string }
   | { type: "voiceToggle" }
-  | { type: "voicePick" }
+  | { type: "voiceSet"; model: string; voice: string }
+  | { type: "voiceRecording" }
   | { type: "typingSoundsToggle" }
-  | { type: "typingSoundPick" }
+  | { type: "typingSoundSet"; id: string }
+  | { type: "typingSoundPreview"; id: string }
 
 const MAX_LOG = 400
 
 /** The commands the panel may run: the ones its intro links to. */
-const PANEL_COMMANDS: ReadonlySet<string> = new Set(["aiPair.playDemo", "aiPair.setUpAgent", "aiPair.startOmp"])
+const PANEL_COMMANDS: ReadonlySet<string> = new Set(["aiPair.playDemo", "aiPair.setUpAgent"])
 
-/** Everything the panel replays when its view is (re)created: pair events and finished OMP lines, in order. */
-type Logged = PanelEvent | ({ type: "ompChat" } & OmpChat)
 export class NarrationPanel implements PanelPort, KeysPort, vscode.WebviewViewProvider {
   static readonly viewId = "aiPair.narration"
   controller?: Controller
-  omp?: OmpPort
+  starter?: StarterPort
+  mode?: ModePort
   voice?: VoicePanelPort
+  switches?: SwitchPort
   private view?: vscode.WebviewView
   /** Everything posted so far, replayed when the view is (re)created. */
-  private readonly log: Logged[] = []
-  private ompStatus: OmpStatus = { state: "off" }
+  private readonly log: PanelEvent[] = []
+  private modeChoice: ModeChoice = { id: "build", label: "Build" }
   private voiceStatus: VoiceStatus = { enabled: false, state: "off", voice: "af_heart" }
   private typingSounds?: TypingSounds
 
@@ -110,18 +112,40 @@ export class NarrationPanel implements PanelPort, KeysPort, vscode.WebviewViewPr
     void this.view?.webview.postMessage({ type: "speed", value })
   }
 
-  /** The built-in OMP conversation started, stopped, or changed its mind. Not logged: only now matters. */
-  showOmpStatus(status: OmpStatus): void {
-    this.ompStatus = status
-    void vscode.commands.executeCommand("setContext", "aiPair.ompActive", status.state !== "off")
-    void this.view?.webview.postMessage({ type: "ompState", ...status })
+  /** The pairing mode changed, or a session started under it. Not logged: only now matters. */
+  showMode(choice: ModeChoice): void {
+    this.modeChoice = choice
+    void this.view?.webview.postMessage({ type: "modeChoice", ...choice })
   }
 
-  /** The voice was turned on or off, loaded, or failed. Not logged: only now matters. */
+  /** The voice was turned on or off, loaded, or failed. Not logged: only now matters. Its menu
+   *  rides along: what changed may be exactly what the menu shows (a new pick, a fetch done). */
   showVoiceStatus(status: VoiceStatus): void {
     this.voiceStatus = status
     void vscode.commands.executeCommand("setContext", "aiPair.voiceOn", status.enabled)
     void this.view?.webview.postMessage({ type: "voiceState", ...status })
+    this.showVoiceChoices()
+  }
+
+  /** The voice menu's rows, as they now stand, sample files turned into page URLs. Not logged. */
+  showVoiceChoices(): void {
+    const webview = this.view?.webview
+    if (!this.voice || !webview) return
+    const choices = this.voice.choices()
+    const shown = (rows: VoiceRow[]) => rows.map((r) => (r.preview ? { ...r, preview: webview.asWebviewUri(vscode.Uri.file(r.preview)).toString() } : r))
+    void webview.postMessage({ type: "voiceChoices", ...choices, kokoro: shown(choices.kokoro), chatterbox: shown(choices.chatterbox) })
+  }
+
+  /** The keyboard menu's rows, as they now stand. Not logged: only now matters. */
+  showSwitchChoices(): void {
+    if (this.switches) void this.view?.webview.postMessage({ type: "switchChoices", ...this.switches.choices() })
+  }
+
+  /** Opens one of the panel's own menus (from a command). The page ignores it mid-session,
+   *  when the row these live on is put away. */
+  openMenu(menu: "mode" | "voice" | "keys"): void {
+    this.reveal()
+    void this.view?.webview.postMessage({ type: "openMenu", menu })
   }
 
   /** The voice started or stopped sounding: the typing sounds step back while it does. Not logged. */
@@ -149,27 +173,6 @@ export class NarrationPanel implements PanelPort, KeysPort, vscode.WebviewViewPr
     if (this.typingSounds?.enabled) void this.view?.webview.postMessage({ type: "key", text })
   }
 
-  /**
-   * One line of the OMP conversation. While a reply is still coming in (`done` false) it only
-   * updates the live view; the finished line is what a recreated view replays.
-   */
-  showOmpChat(chat: OmpChat, done: boolean): void {
-    const event: Logged = { type: "ompChat", ...chat }
-    if (done) {
-      const at = this.log.findIndex((e) => e.type === "ompChat" && e.id === chat.id)
-      if (at >= 0) this.log[at] = event
-      else {
-        this.log.push(event)
-        if (this.log.length > MAX_LOG) this.log.splice(0, this.log.length - MAX_LOG)
-      }
-    }
-    void this.view?.webview.postMessage(event)
-  }
-
-  /** Puts words in the reply box, as OMP's `set_editor_text` asks. */
-  showDraft(text: string): void {
-    void this.view?.webview.postMessage({ type: "ompDraft", text })
-  }
 
   post(event: PanelEvent): void {
     this.log.push(event)
@@ -210,62 +213,44 @@ export class NarrationPanel implements PanelPort, KeysPort, vscode.WebviewViewPr
         void this.view?.webview.postMessage({ type: "replay", events: this.log })
         this.showSpeed(this.speed.get())
         this.showSelection(this.selection.ref())
-        this.showOmpStatus(this.omp?.status() ?? this.ompStatus)
+        this.showMode(this.mode?.choice() ?? this.modeChoice)
         this.showVoiceStatus(this.voice?.status() ?? this.voiceStatus)
         if (this.typingSounds) this.showTypingSounds(this.typingSounds)
+        this.showSwitchChoices()
         return
       case "speed":
         this.speed.set(m.value)
         return
       case "reply": {
-        // In a pair session the reply belongs to the session, whoever the agent is. Outside one,
-        // it is a prompt for the built-in OMP conversation.
-        if (c?.isActive) {
-          // Replying means "go on with this", so any pause ends.
-          c.resume()
-          c.userMessage(m.text, m.attach ? this.selection.current() : undefined)
-          return
-        }
-        const omp = this.omp
-        if (!omp || omp.status().state === "off") return
-        const selection = m.attach ? this.selection.current() : undefined
-        this.post({ type: "user", text: m.text, ref: selection && this.selection.ref() })
-        omp.prompt(
-          selection
-            ? `${m.text}\n\nAbout this code in ${selection.file} (lines ${selection.from.line}–${selection.to.line}):\n\n${selection.text}`
-            : m.text,
-        )
+        if (!c?.isActive) return
+        // Replying means "go on with this", so any pause ends.
+        c.resume()
+        c.userMessage(m.text, m.attach ? this.selection.current() : undefined)
         return
       }
-      case "ompStart":
-        this.omp?.start()
+      case "agentStart":
+        this.starter?.start()
         return
-      case "ompStop":
-        this.omp?.stop()
-        return
-      case "ompAbort":
-        this.omp?.abort()
-        return
-      case "ompNew":
-        this.omp?.newChat()
-        return
-      case "ompModel":
-        this.omp?.pickModel()
-        return
-      case "ompThinking":
-        this.omp?.setThinking(m.level)
+      case "modeSet":
+        this.mode?.set(m.id)
         return
       case "voiceToggle":
         this.voice?.toggle()
         return
-      case "voicePick":
-        this.voice?.pickVoice()
+      case "voiceSet":
+        this.voice?.choose(m.model, m.voice)
+        return
+      case "voiceRecording":
+        this.voice?.chooseRecording()
         return
       case "typingSoundsToggle":
         void vscode.commands.executeCommand("aiPair.toggleTypingSounds")
         return
-      case "typingSoundPick":
-        void vscode.commands.executeCommand("aiPair.selectTypingSound")
+      case "typingSoundSet":
+        this.switches?.set(m.id)
+        return
+      case "typingSoundPreview":
+        this.switches?.preview(m.id)
         return
       case "draft":
         // Typing a reply pauses playback, the way a pair stops when you start talking.

@@ -48,19 +48,42 @@ Layout, top to bottom:
 1. **The band**, a full-width area on the editor's background, holding
    everything about now:
    - **Its header**: the agent's state (a colored dot and a few words: _Agent
-     is typing_, _Read this_, _Needs you_, _Your turn_), and the controls,
+     is typing_, _Read this_, _Needs you_, _Your turn_), the session's
+     pairing mode after them as its small icon and word in muted text,
+     and the controls,
      compact and quiet, as icons without fills: Pause/Resume, Interrupt, My
      turn, the speed, End. During the programmer's turn, Pause and Interrupt
      give way to Hand back, the one labeled control, since it's the main
      action then. The speed opens a menu of 0.4× to 3.0×. The agent's color
-     is on the dot only, never on the controls.
+     is on the dot only, never on the controls. In a narrow panel the
+     controls drop to a line of their own under the state, right-aligned,
+     rather than crowd it: the state keeps room for its words, and the
+     mode's word gives way (to "…") before the state's.
      The words say what the wait is: while the agent thinks, the dot
      breathes and a clock counts (_Agent is thinking · 8s_, and _no word from
      it yet_ past a minute and a half), so a long think reads as work and a
-     stuck agent as stuck — with OMP, what it's doing replaces _Agent is
-     thinking_ while it reads or searches (_Reading hello file · 3s_); while
-     it plays, how many batches are written and ready behind this one, and
-     _writing more_ while the agent is at it.
+     stuck agent as stuck; while it plays, how many batches are written and
+     ready behind this one, and _writing more_ while the agent is at it.
+     With the voice on, a think after news isn't silent either. When a batch
+     ends on a run with nothing queued after it, the voice reads the result
+     off the screen at once, as a person at the desk would: a short output
+     whole (_It printed 5.0._), a long one by its length and last line, a
+     failure by its last line (_It failed: NameError: name 'x' is not
+     defined._). The agent's report quotes it, so its answer goes on from
+     it. Then, six seconds into the think after a run (three after something
+     the programmer said or did, five when the editor just ran out of written
+     batches), the voice makes the small sound a person would, fitted to it
+     (_Mm. Let me see._, _Let me look at why._, _One sec._), and once more
+     fifteen seconds later if the think goes on (_Still working it out._).
+     The extension says all of these, not the agent, so they cost no model
+     time and work with any agent; they're facts and thinking noises, never
+     a guess at the answer. A quiet heartbeat isn't news, so thinking after
+     one stays silent. A filler not yet heard when the agent's own words
+     come is taken back.
+     After Interrupt the words are _Interrupted · it knows_ until the agent
+     visibly acts on it or the programmer speaks: a quiet agent that heard
+     must not read like one that didn't. While paused they say the work is
+     held, and the agent's reports say the same.
    - **The current message**, in large text (≈1.3× the editor font,
      _tunable_), high contrast. Its **top edge is fixed**, right under the
      header; its height grows downward with the message length. A new message
@@ -84,23 +107,37 @@ Layout, top to bottom:
 
 Without a session, the band has no header: it says there's no session and
 how to start one, and after a session, how it ended, with the agent's
-summary. This is also where OMP lives when it's the panel's own agent: a
-**Start OMP** button, then, once it's running, a header like the session's —
-a dot (green when ready, breathing while it works), _OMP_ and its state, and
-icon buttons for New chat, Stop (only while it works) and Turn off — with
-its model as a pill under it that opens the model picker, and beside it a
-thinking chip (_Max_, _Low_, …) that opens a menu of the levels that model
-offers, changeable at any point, even mid-session, since how long the agent
-thinks is how long the editor waits between batches. With another agent the
-chip is greyed and says its level is set in its own app. The reply box sits
-below. Under a hairline, a _Sound_ row holds the Voice toggle (with the voice
-picker joined to it) and the Key sounds toggle (with the switch picker
-joined to it), each showing on or off;
-words appear beside them only when something needs saying, like the voice
-loading or failing. Its words go to the history as the agent's messages — streaming in
-place — its tool calls as small mono lines, and its stops and starts as
-dividers. In a session none of that shows twice: the narration is its voice,
-and the band looks as it does for any agent.
+summary. The whole row under it is icons, so it fits on one line.
+Getting an agent going is one play button: it runs the chosen agent in
+a free terminal already standing in the workspace, or a new one there.
+Which agent that is changes rarely, so it's not in the panel; the
+command _AI Pair: Choose Agent to Start_ picks it (any of the set-up
+agents, or a custom command). Next to it, the session's **pairing
+mode**: one button showing the active mode's icon, opening a small
+menu here in the panel (like the speed menu). Bricks for _Build_ (get
+it done, shown as it goes), and for _Learn_ an eye (_Show me_), two
+people (_Together_), a pencil (_Let me try_): three splits of who does
+the work, each with a line saying what it means. It's picked per
+session before it starts and remembered between them; the agent is
+told at the start, and the mode's page rides with its guide. The panel never
+hosts an agent: each stays its own app, with its own screen, model and
+thinking settings, and Start treats them all the same. At the right of
+the same row sit the sound toggles as icons only, their names in their
+tips: Voice and Key sounds, each showing on or off, each joined to its
+own small menu opening here in the panel (the panel's menus all do:
+speed, mode, voice, keyboard; each shifts back inside when the panel
+is too narrow for where it hangs). The voice menu lists Kokoro's and
+Chatterbox's voices under friendly names with a colored dot each, a
+down-arrow on one whose engine is still to fetch, and the programmer's
+own recording among them, with choosing one a row of its own. Each
+voice is heard as it's moved to — a tiny shipped sample, cut short the
+moment the pointer moves on, so voices compare back to back without
+warming an engine up — and the keyboard menu's switches likewise play
+as they're moved to: both are chosen by ear.
+Too narrow for one line, the row wraps deliberately: play left and the
+mode right on top, sound below with voice left and keys right. Words
+appear under them only when something needs saying, like the voice
+loading or failing. The reply box sits below, once a session is running.
 In every message, code spans that name a file (`game.ts`,
 `src/server.ts`) open it, found by name if it isn't a path from the
 workspace's root, and URLs open in the browser. File and code references are
@@ -133,7 +170,9 @@ A command waiting to be allowed still shows its box: it's the one thing in
 the band that needs a click. The status line and the reading ring stay: the
 ring now fills over speaking time. Each `say` is spread over the typing it
 explains — a long one gets a head start, then talks over the typing, so the
-two finish about together. Interrupting cuts the voice off mid-line.
+two finish about together; a natural voice keeps one steady pace while it
+does this, spread by pauses alone, never played faster or slower line by
+line. Interrupting cuts the voice off mid-line.
 
 **Typing sounds.** A pair at one desk hears the other's keyboard, and it
 tells you work is happening without looking. The keyboard button in the

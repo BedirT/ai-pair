@@ -22,11 +22,12 @@ const ICONS = {
   speaker: svg('<path d="M11 5L6 9H3v6h3l5 4zM15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/>', "speaker-on"),
   speakerOff: svg('<path d="M11 5L6 9H3v6h3l5 4zM16 9l6 6M22 9l-6 6"/>', "speaker-off"),
   keyboard: svg('<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6.5 10h1M10.5 10h1M14.5 10h1M18 10h-.5M8 14h8"/>'),
-  plus: svg('<path d="M12 5v14M5 12h14"/>'),
-  power: svg('<path d="M12 3v8M6.3 6.8a8 8 0 1011.4 0"/>'),
   chevron: svg('<path d="M7 10l5 5 5-5"/>', "chevron"),
-  spark: svg('<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>'),
-  bulb: svg('<path d="M9 18h6M10 21h4M12 3a6 6 0 00-4 10.5c.8.8 1 1.5 1 2.5h6c0-1 .2-1.7 1-2.5A6 6 0 0012 3z"/>'),
+  // The pairing modes: bricks going up, an eye watching, two people, a pencil in your own hand.
+  build: svg('<rect x="3" y="13" width="8" height="7" rx="1"/><rect x="13" y="13" width="8" height="7" rx="1"/><rect x="8" y="4" width="8" height="7" rx="1"/>'),
+  show: svg('<path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+  together: svg('<circle cx="9" cy="8" r="3.5"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><path d="M15.5 4.9a3.5 3.5 0 010 6.2M21 20c-.2-2.6-1.7-4.4-4-5.1"/>'),
+  pencil: svg('<path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 013 3L8 19z"/><path d="M14.5 6.5l3 3"/>'),
 }
 
 export function panelHtml(cspSource: string): string {
@@ -106,11 +107,19 @@ export function panelHtml(cspSource: string): string {
   /* Room for the header and two lines of message, so the reply box stays still for short messages. */
   body.active #main { min-height: calc(32px + 2 * 1.5 * 1.3 * var(--vscode-editor-font-size, 13px)); box-sizing: border-box; }
 
-  #head { display: flex; align-items: center; gap: 4px; height: 24px; }
+  /* The status keeps a line's worth of room; when the buttons won't fit beside it, they drop to
+     a line of their own (right-aligned, wrapping again if even that is too narrow) instead of
+     sliding over it. */
+  #head { display: flex; align-items: center; flex-wrap: wrap; column-gap: 8px; row-gap: 6px; min-height: 24px; }
   /* Without a session, the title under it says it all. */
   body:not(.active) #head { display: none; }
-  #status { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; font-size: 12px; }
-  #status-text { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #status { display: flex; align-items: center; gap: 12px; flex: 1 1 210px; min-width: 0; height: 24px; font-size: 12px; }
+  #status-text { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  /* The session's pairing mode, its icon and word quiet beside the status: picked per session, fixed
+     once it runs. Squeezed, its word gives way before the status's. */
+  #mode-label { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); white-space: nowrap; min-width: 13px; overflow: hidden; flex-shrink: 100; }
+  #mode-word { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #mode-label .i { width: 13px; height: 13px; }
   .dot { position: relative; width: 7px; height: 7px; margin-left: 4px; border-radius: 50%; background: var(--accent); flex: none; }
   .dot.read { background: var(--read); animation: breathe 2.4s ease-in-out infinite; }
   .dot.dim { opacity: 0.45; }
@@ -127,7 +136,7 @@ export function panelHtml(cspSource: string): string {
     mask: radial-gradient(circle, transparent 6px, #000 6.5px);
   }
 
-  #controls { display: none; align-items: center; gap: 1px; }
+  #controls { display: none; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 1px; margin-left: auto; max-width: 100%; }
   body.active #controls { display: flex; }
   #pause .resume, body.paused #pause .pause { display: none; }
   body.paused #pause .resume { display: block; }
@@ -138,17 +147,36 @@ export function panelHtml(cspSource: string): string {
   #end { margin-left: 2px; }
   #speed-wrap { position: relative; }
   #speed { font-variant-numeric: tabular-nums; }
-  #speed-menu {
+  :is(#speed-menu, #mode-menu, #voice-menu, #keys-menu) {
     position: absolute; right: 0; top: 28px; z-index: 10; padding: 4px; border-radius: 6px;
     display: flex; flex-direction: column; background: var(--vscode-menu-background, var(--surface));
     color: var(--vscode-menu-foreground, var(--fg));
     border: 1px solid var(--vscode-menu-border, var(--border));
     box-shadow: 0 4px 14px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.18));
+    max-width: calc(100vw - 20px);
   }
-  #speed-menu[hidden] { display: none; }
-  #speed-menu button { justify-content: flex-start; height: 24px; padding: 0 8px; color: inherit; font-variant-numeric: tabular-nums; }
-  #speed-menu button[aria-checked="true"] { background: var(--soft-hover); }
-  #speed-menu button:hover { background: var(--vscode-menu-selectionBackground, var(--soft)); color: var(--vscode-menu-selectionForeground, inherit); }
+  :is(#speed-menu, #mode-menu, #voice-menu, #keys-menu)[hidden] { display: none; }
+  :is(#speed-menu, #mode-menu, #voice-menu, #keys-menu) button { justify-content: flex-start; height: 24px; padding: 0 8px; color: inherit; text-align: left; }
+  #speed-menu button { font-variant-numeric: tabular-nums; }
+  :is(#speed-menu, #mode-menu, #voice-menu, #keys-menu) button[aria-checked="true"] { background: var(--soft-hover); }
+  :is(#speed-menu, #mode-menu, #voice-menu, #keys-menu) button:hover { background: var(--vscode-menu-selectionBackground, var(--soft)); color: var(--vscode-menu-selectionForeground, inherit); }
+  /* The pairing mode: one button showing the active mode's icon; its menu opens here, in the panel. */
+  #mode-wrap { position: relative; }
+  #mode-btn { box-shadow: inset 0 0 0 1px var(--hair); padding: 0 7px; }
+  #mode-btn:hover, #mode-btn.on { background: var(--vscode-toolbar-hoverBackground, var(--soft)); }
+  #mode-current { display: inline-flex; }
+  #mode-menu { left: 0; right: auto; min-width: 232px; }
+  :is(#mode-menu, #voice-menu, #keys-menu) button { height: auto; padding: 5px 8px; }
+  .mode-text { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; }
+  .mode-desc { font-size: 11px; color: color-mix(in srgb, currentColor 62%, transparent); }
+  /* Menu sections and rows: a colored dot where an icon would only repeat itself, a down-arrow
+     on a voice whose engine still has to be fetched. */
+  .menu-head { padding: 6px 8px 2px; font-size: 11px; font-weight: 600; color: color-mix(in srgb, currentColor 62%, transparent); }
+  .menu-head:first-child { padding-top: 2px; }
+  .hue { width: 8px; height: 8px; border-radius: 50%; flex: none; margin: 0 3px; }
+  .dl { margin-left: auto; display: inline-flex; opacity: 0.75; padding-left: 10px; }
+  #voice-menu { min-width: 232px; max-height: 48vh; overflow-y: auto; }
+  #keys-menu { min-width: 232px; }
 
   #now { display: none; margin-top: 8px; }
   body.active #now { display: block; }
@@ -182,56 +210,18 @@ export function panelHtml(cspSource: string): string {
   #idle-summary:empty { display: none; }
   #idle-text { margin-top: 4px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 
-  /* OMP, when it runs in the panel: a header with its state and its few controls, then its model. */
-  #omp-head { display: none; align-items: center; gap: 6px; height: 24px; }
-  body.omp #omp-head { display: flex; }
-  #omp-title { font-size: 15px; font-weight: 600; }
-  #omp-state { flex: 1; min-width: 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #omp-dot { margin-left: 0; margin-right: 2px; }
-  #omp-dot.ready { background: var(--ok); }
-  #omp-dot.busy { animation: breathe 1.2s ease-in-out infinite; }
-  #omp-dot.starting { background: var(--muted); animation: breathe 1.2s ease-in-out infinite; }
-  body:not(.omp-busy) #omp-abort { display: none; }
-  button.chip {
-    height: 22px; max-width: 100%; padding: 0 6px 0 8px; border-radius: 11px; gap: 4px;
-    font-size: 11.5px; color: var(--muted); background: var(--soft);
-  }
-  button.chip:hover:not(:disabled) { background: var(--soft-hover); color: var(--fg); }
-  button.chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  button.chip .i { width: 12px; height: 12px; }
-  /* The model and how hard it thinks sit under the reply box, so they can be changed at any
-     point, mid-session too. Another agent's are set in its own app: the level shows, greyed. */
-  #agent-row { display: none; align-items: center; gap: 6px; margin-top: 6px; }
-  body:is(.active, .omp) #agent-row { display: flex; }
-  body:not(.omp) #omp-model { display: none; }
-  /* The level is a short word that must read whole; a long model name gives way to it. */
-  #agent-row #omp-model { min-width: 0; }
-  #think-wrap { position: relative; flex-shrink: 0; }
-  #think-menu {
-    position: absolute; right: 0; bottom: 26px; z-index: 10; padding: 4px; border-radius: 6px;
-    display: flex; flex-direction: column; background: var(--vscode-menu-background, var(--surface));
-    color: var(--vscode-menu-foreground, var(--fg));
-    border: 1px solid var(--vscode-menu-border, var(--border));
-    box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
-  }
-  #think-menu[hidden] { display: none; }
-  #think-menu button { justify-content: flex-start; height: 24px; padding: 0 8px; color: inherit; white-space: nowrap; }
-  #think-menu button[aria-checked="true"] { background: var(--soft-hover); }
-  #think-menu button:hover { background: var(--vscode-menu-selectionBackground, var(--soft)); color: var(--vscode-menu-selectionForeground, inherit); }
-  body.omp #idle-text { margin-top: 8px; }
-  /* With OMP on, its header names the panel; a session's end still gets its own title. */
-  body.omp #idle:not(.ended) #idle-title { display: none; }
-  #omp-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-  body.omp #omp-bar { display: none; }
-  #omp-bar button { height: 26px; padding: 0 10px; }
-  #omp-status, #voice-status { font-size: 12px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Starting an agent: one play button, and the mode beside it; which agent it runs is a command away. */
+  #agent-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  #agent-start { height: 26px; padding: 0 10px; }
+  #voice-status { font-size: 12px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  /* Sound: toggles that show their state, set apart from what the agent is doing. */
-  #sound { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--hair); }
+  /* Sound: icon toggles that show their state, right-aligned on Start's row; their names are in their tips. */
+  #sound { display: flex; gap: 8px; margin-left: auto; position: relative; }
   .seg { display: inline-flex; border-radius: 5px; box-shadow: inset 0 0 0 1px var(--hair); }
   .seg button { border-radius: 0; }
   .seg button:first-child { border-radius: 5px 0 0 5px; }
-  .seg button:last-child { border-radius: 0 5px 5px 0; box-shadow: inset 1px 0 0 var(--hair); }
+  .seg button:last-child { border-radius: 0 5px 5px 0; }
+  .seg button + button { box-shadow: inset 1px 0 0 var(--hair); }
   button.toggle { height: 24px; padding: 0 8px; color: var(--muted); }
   button.toggle:hover:not(:disabled) { color: var(--fg); background: var(--vscode-toolbar-hoverBackground, var(--soft)); }
   button.toggle[aria-pressed="true"] { color: var(--fg); background: var(--vscode-toolbar-hoverBackground, var(--soft)); }
@@ -239,6 +229,12 @@ export function panelHtml(cspSource: string): string {
   /* Words show only when something needs saying, on a line of their own under the toggles. */
   #voice-status { flex-basis: 100%; }
   #voice-status:empty { display: none; }
+  /* Too narrow for one line: play stays left, the mode takes the right, and sound drops to its
+     own line with voice left and keys right, instead of huddling at the right edge. */
+  @media (max-width: 319px) {
+    #mode-wrap { margin-left: auto; }
+    #sound { flex-basis: 100%; margin-left: 0; justify-content: space-between; }
+  }
   body.keys-blocked #keys-toggle { color: var(--read); }
   /* With the voice speaking, the band's big words go: the eyes belong on the code. A command
      stays: allowing it is a button to press, and nothing plays until it's pressed. */
@@ -254,7 +250,7 @@ export function panelHtml(cspSource: string): string {
   .entry.tool { font-family: var(--mono); font-size: 11.5px; color: var(--faint); }
 
   #composer { display: none; margin-top: 12px; }
-  body:is(.active, .omp) #composer { display: block; }
+  body.active #composer { display: block; }
   #compose-row {
     display: flex; align-items: flex-end; gap: 4px; padding: 3px 3px 3px 10px; border-radius: 6px;
     background: var(--vscode-sideBar-background, var(--vscode-input-background)); border: 1px solid var(--vscode-input-border, var(--border));
@@ -327,7 +323,7 @@ export function panelHtml(cspSource: string): string {
   <section id="band">
     <div id="main">
       <div id="head">
-        <div id="status"><span id="dot" class="dot off"></span><span id="status-text">No session</span></div>
+        <div id="status"><span id="dot" class="dot off"></span><span id="status-text">No session</span><span id="mode-label"><span id="mode-icon"></span><span id="mode-word"></span></span></div>
         <div id="controls">
           <button id="voice" class="quiet" aria-label="Voice" data-tip="Hear the agent instead of reading it">${ICONS.speaker}${ICONS.speakerOff}</button>
           <button id="keys" class="quiet" aria-label="Typing sounds" aria-pressed="false" data-tip="Hear the agent's keystrokes">${ICONS.keyboard}</button>
@@ -356,29 +352,31 @@ export function panelHtml(cspSource: string): string {
         </div>
       </div>
       <div id="idle">
-        <div id="omp-head">
-          <span id="omp-dot" class="dot"></span>
-          <span id="omp-title">OMP</span>
-          <span id="omp-state"></span>
-          <button id="omp-new" class="quiet" aria-label="New chat" data-tip="New chat: start a fresh conversation">${ICONS.plus}</button>
-          <button id="omp-abort" class="quiet" aria-label="Stop" data-tip="Stop what OMP is doing now">${ICONS.stop}</button>
-          <button id="omp-stop" class="quiet" aria-label="Turn OMP off" data-tip="Turn OMP off">${ICONS.power}</button>
-        </div>
         <div id="idle-title">No active session</div>
         <div id="idle-summary"></div>
-        <div id="idle-text">Talk to OMP right here, ask another agent to pair with you, or run <a class="command" data-command="aiPair.playDemo">AI Pair: Play Demo Session</a>. First time? Run <a class="command" data-command="aiPair.setUpAgent">AI Pair: Set Up Agent</a>.</div>
-        <div id="omp-bar">
-          <button id="omp-start" class="primary">${ICONS.play}<span>Start OMP</span></button>
-          <span id="omp-status"></span>
-        </div>
-        <div id="sound" role="group" aria-label="Sound">
-          <div class="seg">
-            <button id="voice-toggle" class="toggle" aria-pressed="false">${ICONS.speaker}${ICONS.speakerOff}<span>Voice</span></button>
-            <button id="voice-pick" class="toggle" aria-label="Choose a voice" data-tip="Choose whose voice it is">${ICONS.chevron}</button>
+        <div id="idle-text">Start your agent in a terminal here, ask one you already run to pair with you, or run <a class="command" data-command="aiPair.playDemo">AI Pair: Play Demo Session</a>. First time? Run <a class="command" data-command="aiPair.setUpAgent">AI Pair: Set Up Agent</a>.</div>
+        <div id="agent-bar">
+          <button id="agent-start" class="primary" aria-label="Start agent" data-tip="Start your agent in a free terminal standing here, or a new one. Which agent Start runs: AI Pair: Choose Agent to Start">${ICONS.play}</button>
+          <div id="mode-wrap">
+            <button id="mode-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Pairing mode: Build" data-tip="Pairing mode: Build. Click to choose"><span id="mode-current">${ICONS.build}</span>${ICONS.chevron}</button>
+            <div id="mode-menu" role="menu" aria-label="Pairing mode" hidden>
+              <button role="menuitemradio" aria-checked="true" data-mode="build" aria-label="Build">${ICONS.build}<span class="mode-text"><span>Build</span><span class="mode-desc">Get it done; show me as you go</span></span></button>
+              <button role="menuitemradio" aria-checked="false" data-mode="learn-show" aria-label="Learn: Show me">${ICONS.show}<span class="mode-text"><span>Learn · Show me</span><span class="mode-desc">The agent drives and teaches</span></span></button>
+              <button role="menuitemradio" aria-checked="false" data-mode="learn-together" aria-label="Learn: Together">${ICONS.together}<span class="mode-text"><span>Learn · Together</span><span class="mode-desc">A worked example, then you try the next one like it</span></span></button>
+              <button role="menuitemradio" aria-checked="false" data-mode="learn-try" aria-label="Learn: Let me try">${ICONS.pencil}<span class="mode-text"><span>Learn · Let me try</span><span class="mode-desc">You drive; the agent navigates</span></span></button>
+            </div>
           </div>
-          <div class="seg">
-            <button id="keys-toggle" class="toggle" aria-pressed="false">${ICONS.keyboard}<span id="keys-label">Key sounds</span></button>
-            <button id="keys-pick" class="toggle" aria-label="Choose a keyboard switch" data-tip="Choose the keyboard: each one plays as you move to it">${ICONS.chevron}</button>
+          <div id="sound" role="group" aria-label="Sound">
+            <div class="seg">
+              <button id="voice-toggle" class="toggle" aria-label="Voice" aria-pressed="false">${ICONS.speaker}${ICONS.speakerOff}</button>
+              <button id="voice-pick" class="toggle" aria-label="Choose a voice" aria-haspopup="menu" aria-expanded="false" data-tip="Choose whose voice it is">${ICONS.chevron}</button>
+            </div>
+            <div class="seg">
+              <button id="keys-toggle" class="toggle" aria-label="Key sounds" aria-pressed="false">${ICONS.keyboard}</button>
+              <button id="keys-pick" class="toggle" aria-label="Choose a keyboard switch" aria-haspopup="menu" aria-expanded="false" data-tip="Choose the keyboard: each one plays as you move to it">${ICONS.chevron}</button>
+            </div>
+            <div id="voice-menu" role="menu" aria-label="Choose a voice" hidden></div>
+            <div id="keys-menu" role="menu" aria-label="Choose a keyboard switch" hidden></div>
           </div>
           <span id="voice-status"></span>
         </div>
@@ -390,13 +388,7 @@ export function panelHtml(cspSource: string): string {
         <textarea id="reply" rows="1" aria-label="Reply to the agent" placeholder="Reply to the agent…"></textarea>
         <button id="send" class="quiet" aria-label="Send" data-tip="Send (Enter)">${ICONS.send}</button>
       </div>
-      <div id="agent-row">
-        <button id="omp-model" class="chip" data-tip="Choose the model OMP uses">${ICONS.spark}<span id="omp-model-name">Model</span>${ICONS.chevron}</button>
-        <div id="think-wrap">
-          <button id="omp-think" class="chip" aria-haspopup="menu" aria-expanded="false" disabled data-tip="Your agent's thinking level is set in its own app">${ICONS.bulb}<span id="omp-think-name">Thinking</span>${ICONS.chevron}</button>
-          <div id="think-menu" role="menu" aria-label="Thinking level" hidden></div>
-        </div>
-      </div>
+
     </div>
   </section>
   <section id="history" aria-label="Earlier, newest first"></section>
@@ -410,26 +402,24 @@ export function panelHtml(cspSource: string): string {
     turn: $("turn"), turnLabel: $("turn-label"), speed: $("speed"), speedMenu: $("speed-menu"), end: $("end"),
     now: $("now-text"), ref: $("now-ref"),
     idle: $("idle"), idleTitle: $("idle-title"), idleSummary: $("idle-summary"), idleText: $("idle-text"),
-    ompStart: $("omp-start"), ompStop: $("omp-stop"), ompAbort: $("omp-abort"), ompNew: $("omp-new"), ompModel: $("omp-model"), ompStatus: $("omp-status"),
-    ompDot: $("omp-dot"), ompState: $("omp-state"), ompModelName: $("omp-model-name"),
-    ompThink: $("omp-think"), ompThinkName: $("omp-think-name"), thinkMenu: $("think-menu"),
-    voice: $("voice"), voiceToggle: $("voice-toggle"), voicePick: $("voice-pick"), voiceStatus: $("voice-status"),
-    keys: $("keys"), keysToggle: $("keys-toggle"), keysLabel: $("keys-label"), keysPick: $("keys-pick"),
+    agentStart: $("agent-start"),
+    modeBtn: $("mode-btn"), modeMenu: $("mode-menu"), modeCurrent: $("mode-current"), modeIcon: $("mode-icon"), modeWord: $("mode-word"),
+    voice: $("voice"), voiceToggle: $("voice-toggle"), voicePick: $("voice-pick"), voiceMenu: $("voice-menu"), voiceStatus: $("voice-status"),
+    keysMenu: $("keys-menu"),
+    keys: $("keys"), keysToggle: $("keys-toggle"), keysPick: $("keys-pick"),
     reply: $("reply"), send: $("send"), attach: $("attach"), attachRef: $("attach-ref"), attachX: $("attach-x"),
     run: $("run"), runLabel: $("run-label"), runCmd: $("run-cmd"), runGo: $("run-go"), runProgram: $("run-program"), runAll: $("run-all"), runSkip: $("run-skip"),
     history: $("history"), tip: $("tip"),
   };
-  /** What the panel says with nothing going on, and with OMP ready to talk. */
+  /** What the panel says with nothing going on. */
   const IDLE_INTRO = ui.idleText.innerHTML;
-  const OMP_INTRO = "Ask anything. For code work, OMP pairs with you: it types in your editor and talks as it goes.";
   let active = false, turn = "agent", paused = false, replaying = false;
-  let omp = { state: "off" };   // the built-in OMP conversation, as the extension last reported it
   let voice = { enabled: false, state: "off", voice: "af_heart" };   // the voice, as the extension last reported it
-  const ompEntries = {};   // a streaming OMP reply's history row, by its id
   let state = null;     // the agent's state, as the extension last reported it
   let ahead = 0;        // batches written and waiting behind the one playing
   let working = false;  // the agent is at work between its calls: thinking, or writing ahead
   let thinkingSince = 0, statusClock = null;   // how long the agent has been thinking, shown as it goes
+  let interruptNote = false;   // you pressed Interrupt: the status says the agent's been told until it acts or you speak
   let selection = null, selectionDismissed = false;   // the programmer's selection, offered with the reply
   let runId = null, runConfirming = false;   // the command shown in the run box
   let current = null;   // text of the current message
@@ -501,8 +491,7 @@ export function panelHtml(cspSource: string): string {
     else { outcome.classList.add("fail"); outcome.textContent = "✕ exit " + exitCode; }
   }
 
-  const ompOn = () => omp.state !== "off";
-  const attaching = () => (active || ompOn()) && selection !== null && !selectionDismissed;
+  const attaching = () => active && selection !== null && !selectionDismissed;
   function syncAttach() {
     ui.attach.classList.toggle("on", attaching());
     if (attaching()) ui.attachRef.replaceChildren(refLink(selection));
@@ -677,14 +666,13 @@ export function panelHtml(cspSource: string): string {
   }
 
   // A webview may only make sound once it has had a click or key of its own; until then the keys
-  // button asks for one, and clicking it lets the sound start rather than turning it off.
+  // button's tip asks for one, and clicking it lets the sound start rather than turning it off.
   function syncKeys() {
     const on = typingSounds.enabled, blocked = on && audio?.state !== "running";
     document.body.classList.toggle("typing-sounds", on);
     document.body.classList.toggle("keys-blocked", blocked);
     ui.keys.setAttribute("aria-pressed", String(on));
     ui.keysToggle.setAttribute("aria-pressed", String(on));
-    ui.keysLabel.textContent = blocked ? "Click to hear" : "Key sounds";
     const named = typingSounds.name ? " (" + typingSounds.name + ")" : "";
     const tip = blocked ? "Click to let the key sounds play: the panel needs a click before it may make sound" : on ? "Key sounds on" + named + ": you hear the agent's keystrokes. Click to turn them off" : "Key sounds off: hear the agent's keystrokes, softly, under its voice";
     setTip(ui.keys, tip);
@@ -805,7 +793,7 @@ export function panelHtml(cspSource: string): string {
     read: ["read", "Read this"],
     running: ["", "Running a command"],
     thinking: ["think", "Agent is thinking"],
-    paused: ["dim", "Paused"],
+    paused: ["dim", "Paused · work is held"],
     listening: ["ring", "Your move"],
     navigator: ["ring", "Your turn"],
   };
@@ -826,15 +814,16 @@ export function panelHtml(cspSource: string): string {
     }
     let [cls, text] = runConfirming ? ["read", "Needs you: allow the command?"] : STATUS[state] || ["", "Session started"];
     if (!runConfirming && state === "thinking") {
-      // What the agent is looking into, when it's OMP and says; a clock, so a long think reads as
-      // work going on, and a stuck agent as one.
-      if (omp && omp.activity) text = omp.activity;
+      // A clock, so a long think reads as work going on, and a stuck agent as one.
       const ms = Date.now() - thinkingSince;
       text += " · " + elapsed(ms) + (ms > 90000 ? " · no word from it yet" : "");
     } else if (!runConfirming && (state === "typing" || state === "read" || state === "running")) {
       if (ahead > 0) text += " · " + ahead + " more ready";
       if (working) text += " · writing more";
     }
+    // Until the agent visibly takes an interrupt in, the status says it landed: without this, a
+    // quiet agent after Interrupt reads exactly like one that never heard it.
+    if (interruptNote && (state === "listening" || state === "thinking")) text = "Interrupted · it knows";
     ui.dot.className = "dot " + cls;
     syncReading();
     ui.status.textContent = text;
@@ -842,6 +831,7 @@ export function panelHtml(cspSource: string): string {
 
   function setState(e) {
     if (e.state === "thinking" && state !== "thinking") thinkingSince = Date.now();
+    if (e.state === "typing" || e.state === "read" || e.state === "running") interruptNote = false;
     state = e.state; turn = e.turn; paused = e.paused; ahead = e.ahead || 0; working = !!e.working;
     clearInterval(statusClock);
     statusClock = state === "thinking" ? setInterval(syncStatus, 1000) : null;
@@ -849,7 +839,7 @@ export function panelHtml(cspSource: string): string {
     document.body.classList.toggle("user-turn", turn === "user");
     ui.pause.classList.toggle("on", paused);
     ui.pause.setAttribute("aria-label", paused ? "Resume" : "Pause");
-    setTip(ui.pause, paused ? "Resume (Space)" : "Pause (Space)");
+    setTip(ui.pause, paused ? "Resume (Space)" : "Pause: hold the agent's work where it is (Space)");
     ui.turnLabel.textContent = turn === "user" ? "Hand back" : "My turn";
     ui.turn.setAttribute("aria-label", ui.turnLabel.textContent);
     setTip(ui.turn, turn === "user" ? "Hand the turn back to the agent, with your reply if you typed one" : "Take the turn: you drive, the agent navigates");
@@ -859,13 +849,13 @@ export function panelHtml(cspSource: string): string {
 
   function setActive(on) {
     active = on;
+    interruptNote = false;
     document.body.classList.toggle("active", on);
-    ui.reply.disabled = !(on || ompOn());
+    ui.reply.disabled = !on;
     if (!on) {
       reading = null;
       runId = null; runConfirming = false; ui.run.className = "";
-      closeSpeedMenu();
-      if (ompOn()) ui.reply.placeholder = "Ask OMP…";
+      closeMenus();
     } else {
       ui.reply.placeholder = turn === "user" ? "Ask the agent…" : "Reply to the agent…";
     }
@@ -874,62 +864,26 @@ export function panelHtml(cspSource: string): string {
     syncTip();
   }
 
-  function setOmp(e) {
-    omp = e;
-    document.body.classList.toggle("omp", ompOn());
-    document.body.classList.toggle("omp-busy", e.state === "busy");
-    ui.reply.disabled = !(active || ompOn());
-    if (!active) ui.reply.placeholder = ompOn() ? "Ask OMP…" : "Reply to the agent…";
-    ui.ompStart.disabled = e.state === "starting";
-    ui.ompDot.className = "dot " + e.state;
-    const doing = e.state === "busy" && e.activity ? e.activity : { starting: "Starting…", ready: "Ready", busy: "Working…" }[e.state] || "";
-    ui.ompState.textContent = [doing, e.detail].filter(Boolean).join(" · ");
-    ui.ompState.dataset.tip = ui.ompState.textContent;
-    // The provider is in the tip; the pill has room for the model's own name.
-    ui.ompModelName.textContent = e.model ? e.model.split("/").pop() : "Model";
-    setTip(ui.ompModel, e.model ? "Model: " + e.model + ". Click to change it" : "Choose the model OMP uses");
-    // How hard it thinks: OMP's own levels for this model, changed from a menu at any point.
-    // Another agent's level is its own app's to set, so the chip only says so.
-    const levels = e.thinkingLevels || [];
-    ui.ompThink.disabled = !ompOn() || levels.length === 0;
-    ui.ompThinkName.textContent = ompOn() && e.thinking ? thinkLabel(e.thinking) : "Thinking";
-    setTip(ui.ompThink, !ompOn() ? "Your agent's thinking level is set in its own app" :
-      e.thinking ? "Thinking: " + thinkLabel(e.thinking) + ". Click to change it" : "How hard the model thinks");
-    ui.thinkMenu.replaceChildren(...levels.map((level) => {
-      const b = document.createElement("button");
-      b.setAttribute("role", "menuitemradio");
-      b.setAttribute("aria-checked", String(level === e.thinking));
-      b.textContent = thinkLabel(level);
-      b.onclick = () => { closeThinkMenu(); ui.ompThink.focus(); vscode.postMessage({ type: "ompThinking", level }); };
-      return b;
-    }));
-    if (ui.ompThink.disabled) closeThinkMenu();
-    // Off, a reason it stopped shows by the Start button.
-    ui.ompStatus.textContent = e.state === "off" ? e.detail || "" : "";
-    ui.ompStatus.dataset.tip = ui.ompStatus.textContent;
-    if (!active && ompOn() && !ui.idle.classList.contains("ended")) {
-      ui.idleText.textContent = OMP_INTRO;
-    } else if (!active && !ompOn() && ui.idleText.textContent === OMP_INTRO) {
-      ui.idleText.innerHTML = IDLE_INTRO;
+  // The picked mode is the icon on its button beside Start and, while a session runs, icon and
+  // word beside the status. Its menu row carries the check.
+  function setModeChoice(e) {
+    let chosen;
+    for (const b of ui.modeMenu.querySelectorAll("button")) {
+      b.setAttribute("aria-checked", String(b.dataset.mode === e.id));
+      if (b.dataset.mode === e.id) chosen = b;
     }
-    syncAttach();
-    syncStatus();
+    ui.modeWord.textContent = e.label;
+    const icon = chosen?.querySelector("svg");
+    if (icon) {
+      ui.modeCurrent.replaceChildren(icon.cloneNode(true));
+      ui.modeIcon.replaceChildren(icon.cloneNode(true));
+    }
+    const name = chosen?.getAttribute("aria-label") ?? e.label;
+    ui.modeBtn.setAttribute("aria-label", "Pairing mode: " + name);
+    setTip(ui.modeBtn, "Pairing mode: " + name + ". Click to choose");
     syncTip();
   }
 
-  const THINK_LABELS = { off: "Off", minimal: "Minimal", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
-  function thinkLabel(level) { return THINK_LABELS[level] || level; }
-
-  function addOmp(e) {
-    if (e.role === "note") { addDivider(e.text); return; }
-    let el = ompEntries[e.id];
-    if (!el) {
-      el = add(entry(e.role === "tool" ? "tool" : "agent"));
-      ompEntries[e.id] = el;
-    }
-    if (e.role === "tool") el.textContent = e.text;
-    else el.innerHTML = rich(e.text);
-  }
 
   function handle(e) {
     switch (e.type) {
@@ -958,15 +912,15 @@ export function panelHtml(cspSource: string): string {
           ui.idle.classList.add("ended");
           ui.idleTitle.textContent = e.reason === "disconnected" ? "The agent disconnected" : "Session ended";
           ui.idleSummary.innerHTML = e.summary ? rich(e.summary) : "";
-          ui.idleText.textContent = ompOn() ? "OMP is still here. Say what to do next." : "Ask your agent to pair again, or start OMP here.";
+          ui.idleText.textContent = "Ask your agent to pair again, or start one here.";
           setActive(false);
         }
         return;
-      case "say": setNow(e.text); return;
+      case "say": interruptNote = false; setNow(e.text); syncStatus(); return;
       case "reading": startReading(e.ms); return;
       case "state": setState(e); return;
-      case "user": addYou(e.text, e.ref); return;
-      case "interrupt": addDivider("You interrupted"); return;
+      case "user": interruptNote = false; addYou(e.text, e.ref); return;
+      case "interrupt": addDivider("You interrupted"); interruptNote = true; syncStatus(); return;
       case "turn":
         addDivider(e.to === "user" ? "You took the turn" : "You handed the turn back");
         if (e.message || e.ref) addYou(e.message, e.ref);
@@ -1013,14 +967,16 @@ export function panelHtml(cspSource: string): string {
         syncAttach();
         return;
       case "focusReply": ui.reply.focus(); return;
-      case "ompState": setOmp(e); return;
+      case "modeChoice": setModeChoice(e); return;
       case "voiceState": setVoice(e); return;
+      case "voiceChoices": setVoiceChoices(e); return;
+      case "switchChoices": setSwitchChoices(e); return;
+      case "openMenu": if (!document.body.classList.contains("active")) menuCtl[e.menu]?.open(); return;
       case "typingSounds": setTypingSounds(e); return;
       case "speaking": speaking = e.speaking; syncKeysLevel(); return;
       case "key": pressKey(e.text); return;
       case "keysPreview": void previewKeys(e.sounds); return;
-      case "ompChat": addOmp(e); return;
-      case "ompDraft": ui.reply.value = e.text; syncDraft(); return;
+
       case "speed": {
         // One decimal, so the menu's speeds line up; a setting with more keeps them.
         const label = (Number.isInteger(e.value * 10) ? e.value.toFixed(1) : String(e.value)) + "×";
@@ -1081,13 +1037,9 @@ export function panelHtml(cspSource: string): string {
   ui.attachX.onclick = () => { selectionDismissed = true; syncAttach(); };
   const decide = (run, allow) => { if (runId !== null) vscode.postMessage({ type: "runDecision", id: runId, run, allow }); };
   ui.runGo.onclick = () => decide(true);
-  ui.ompStart.onclick = () => vscode.postMessage({ type: "ompStart" });
-  ui.ompStop.onclick = () => vscode.postMessage({ type: "ompStop" });
-  ui.ompAbort.onclick = () => vscode.postMessage({ type: "ompAbort" });
-  ui.ompNew.onclick = () => vscode.postMessage({ type: "ompNew" });
+  ui.agentStart.onclick = () => vscode.postMessage({ type: "agentStart" });
   ui.voice.onclick = () => vscode.postMessage({ type: "voiceToggle" });
   ui.voiceToggle.onclick = () => vscode.postMessage({ type: "voiceToggle" });
-  ui.voicePick.onclick = () => vscode.postMessage({ type: "voicePick" });
   const toggleTypingSounds = () => {
     // A click may start sound where nothing else can. While sound waits for one, this is that click.
     if (typingSounds.enabled && audio?.state !== "running") { keysAudio(); return; }
@@ -1096,46 +1048,168 @@ export function panelHtml(cspSource: string): string {
   };
   ui.keys.onclick = toggleTypingSounds;
   ui.keysToggle.onclick = toggleTypingSounds;
-  // This click is also what lets the picker's tries make sound: the list itself is outside the panel.
-  ui.keysPick.onclick = () => { keysAudio(); vscode.postMessage({ type: "typingSoundPick" }); };
-  ui.ompModel.onclick = () => vscode.postMessage({ type: "ompModel" });
+
   ui.runProgram.onclick = () => decide(true, "program");
   ui.runAll.onclick = () => decide(true, "all");
   ui.runSkip.onclick = () => decide(false);
   ui.end.onclick = () => vscode.postMessage({ type: "end" });
 
-  function closeSpeedMenu() {
-    ui.speedMenu.hidden = true;
-    ui.speed.setAttribute("aria-expanded", "false");
-    ui.speed.classList.remove("on");
-  }
-  ui.speed.onclick = (e) => {
-    e.stopPropagation();
-    const open = ui.speedMenu.hidden;
-    ui.speedMenu.hidden = !open;
-    ui.speed.setAttribute("aria-expanded", String(open));
-    ui.speed.classList.toggle("on", open);
-    if (open) ui.speedMenu.querySelector('[aria-checked="true"]')?.focus();
+  // Small menus that open here in the panel (speed, mode, voice, keyboard): one button each, one
+  // open at a time, and each shifted back inside when it would run off the panel's edge.
+  const menuSvg = (paths) => '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + "</svg>";
+  const MENU_ICONS = {
+    download: menuSvg('<path d="M12 4v10m0 0l-4-4m4 4l4-4M4 19h16"/>'),
+    mic: menuSvg('<rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21"/>'),
   };
-  for (const b of ui.speedMenu.querySelectorAll("button")) {
-    b.onclick = () => { closeSpeedMenu(); ui.speed.focus(); vscode.postMessage({ type: "speed", value: Number(b.dataset.speed) }); };
+  const menus = [];
+  function placeMenu(menu) {
+    menu.style.transform = "";
+    const r = menu.getBoundingClientRect(), w = document.documentElement.clientWidth;
+    let dx = 0;
+    if (r.right > w - 6) dx = w - 6 - r.right;
+    if (r.left + dx < 6) dx = 6 - r.left;
+    if (dx) menu.style.transform = "translateX(" + dx + "px)";
   }
-  document.addEventListener("click", (e) => { if (!ui.speedMenu.hidden && !ui.speedMenu.contains(e.target)) closeSpeedMenu(); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !ui.speedMenu.hidden) { closeSpeedMenu(); ui.speed.focus(); } });
+  function wireMenu(btn, menu, pick, onOpen) {
+    const ctl = {
+      btn, menu,
+      close() { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); btn.classList.remove("on"); },
+      open() {
+        for (const m of menus) if (m !== ctl) m.close();
+        if (onOpen) onOpen();
+        menu.hidden = false;
+        placeMenu(menu);
+        btn.setAttribute("aria-expanded", "true");
+        btn.classList.add("on");
+        menu.querySelector('[aria-checked="true"]')?.focus();
+      },
+    };
+    menus.push(ctl);
+    btn.onclick = (e) => { e.stopPropagation(); if (menu.hidden) ctl.open(); else ctl.close(); };
+    menu.addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      ctl.close();
+      btn.focus();
+      pick(b);
+    });
+    return ctl;
+  }
+  function closeMenus() { for (const m of menus) m.close(); }
+  document.addEventListener("click", (e) => {
+    for (const m of menus) if (!m.menu.hidden && !m.menu.contains(e.target)) m.close();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    for (const m of menus) if (!m.menu.hidden) { m.close(); m.btn.focus(); }
+  });
 
-  function closeThinkMenu() {
-    ui.thinkMenu.hidden = true;
-    ui.ompThink.setAttribute("aria-expanded", "false");
+  // Rows get a colored dot from their name, the same color every time: something to recognize a
+  // voice or a keyboard by where an icon would only repeat itself.
+  const HUES = ["#e8875b", "#e5c15c", "#8fc97a", "#5cc9b8", "#5ea8e0", "#9a86e0", "#e07ab0", "#c96f5e"];
+  const hueFor = (id) => { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0; return HUES[h % HUES.length]; };
+  function menuHead(text) {
+    const d = document.createElement("div");
+    d.className = "menu-head";
+    d.textContent = text;
+    return d;
   }
-  ui.ompThink.onclick = (e) => {
-    e.stopPropagation();
-    const open = ui.thinkMenu.hidden;
-    ui.thinkMenu.hidden = !open;
-    ui.ompThink.setAttribute("aria-expanded", String(open));
-    if (open) ui.thinkMenu.querySelector('[aria-checked="true"]')?.focus();
+  function menuRow(o) {
+    const b = document.createElement("button");
+    b.setAttribute("role", "menuitemradio");
+    b.setAttribute("aria-checked", String(!!o.checked));
+    Object.assign(b.dataset, o.data);
+    if (o.icon) { const s = document.createElement("span"); s.style.display = "inline-flex"; s.innerHTML = o.icon; b.append(s); }
+    else if (o.hue) { const s = document.createElement("span"); s.className = "hue"; s.style.background = o.hue; b.append(s); }
+    const text = document.createElement("span");
+    text.className = "mode-text";
+    const name = document.createElement("span");
+    name.textContent = o.name;
+    text.append(name);
+    if (o.tag) { const t = document.createElement("span"); t.className = "mode-desc"; t.textContent = o.tag; text.append(t); }
+    b.append(text);
+    if (o.download) { const s = document.createElement("span"); s.className = "dl"; s.innerHTML = MENU_ICONS.download; b.append(s); }
+    return b;
+  }
+  const voiceRow = (e, v) => ({
+    data: { model: v.model, voice: v.voice, ...(v.preview ? { preview: v.preview } : {}) },
+    checked: e.current.model === v.model && e.current.voice === v.voice,
+    hue: hueFor(v.model + ":" + (v.voice || "own")),
+    name: v.name,
+    tag: v.download ? v.tag + " · fetched when first used" : v.tag,
+    download: v.download,
+  });
+  function setVoiceChoices(e) {
+    const parts = [menuHead("Kokoro · light, works everywhere")];
+    for (const v of e.kokoro) parts.push(menuRow(voiceRow(e, v)));
+    parts.push(menuHead(e.chatterboxNote));
+    for (const v of e.chatterbox) parts.push(menuRow(voiceRow(e, v)));
+    parts.push(menuRow({ data: { action: "recording" }, icon: MENU_ICONS.mic, name: "Sound like a recording…", tag: "Your own voice: 10+ seconds of one person speaking clearly" }));
+    ui.voiceMenu.replaceChildren(...parts);
+  }
+  function setSwitchChoices(e) {
+    ui.keysMenu.replaceChildren(...e.items.map((s) => menuRow({ data: { id: s.id }, checked: e.current === s.id, hue: hueFor(s.id), name: s.name, tag: s.tag })));
+  }
+
+  // Each voice is heard as the menu moves to it: its shipped sample starts at once, and
+  // moving on (or away) cuts it short, so voices are compared back to back by ear.
+  const voiceBanks = {};   // each voice's sample, decoded once, by URL
+  let voiceSource = null, voiceRun = 0;
+  function stopVoice() {
+    voiceRun++;
+    if (voiceSource) { try { voiceSource.stop(); } catch { /* already over */ } voiceSource = null; }
+  }
+  async function hearVoice(url) {
+    stopVoice();
+    if (!url) return;
+    const run = voiceRun;
+    keysAudio();
+    let buffer = voiceBanks[url];
+    if (!buffer) {
+      try { buffer = await audio.decodeAudioData(await (await fetch(url)).arrayBuffer()); } catch { return; }
+      voiceBanks[url] = buffer;
+    }
+    if (run !== voiceRun || audio.state !== "running") return;
+    voiceSource = audio.createBufferSource();
+    voiceSource.buffer = buffer;
+    voiceSource.connect(audio.destination);
+    voiceSource.onended = () => { if (run === voiceRun) voiceSource = null; };
+    voiceSource.start();
+  }
+
+  wireMenu(ui.speed, ui.speedMenu, (b) => vscode.postMessage({ type: "speed", value: Number(b.dataset.speed) }));
+  const modeCtl = wireMenu(ui.modeBtn, ui.modeMenu, (b) => vscode.postMessage({ type: "modeSet", id: b.dataset.mode }));
+  const voiceCtl = wireMenu(ui.voicePick, ui.voiceMenu, (b) => {
+    stopVoice();
+    if (b.dataset.action === "recording") vscode.postMessage({ type: "voiceRecording" });
+    else vscode.postMessage({ type: "voiceSet", model: b.dataset.model, voice: b.dataset.voice });
+  }, () => keysAudio());
+  const closeVoiceMenu = voiceCtl.close;
+  voiceCtl.close = () => { stopVoice(); closeVoiceMenu(); };
+  const keysCtl = wireMenu(ui.keysPick, ui.keysMenu, (b) => vscode.postMessage({ type: "typingSoundSet", id: b.dataset.id }), () => keysAudio());
+  let heardVoice = null;
+  const hearVoiceRow = (e) => {
+    const b = e.target.closest("button");
+    if (!b || b === heardVoice) return;
+    heardVoice = b;
+    void hearVoice(b.dataset.preview || "");
   };
-  document.addEventListener("click", (e) => { if (!ui.thinkMenu.hidden && !ui.thinkMenu.contains(e.target)) closeThinkMenu(); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !ui.thinkMenu.hidden) { closeThinkMenu(); ui.ompThink.focus(); } });
+  ui.voiceMenu.addEventListener("mouseover", hearVoiceRow);
+  ui.voiceMenu.addEventListener("focusin", hearVoiceRow);
+  ui.voiceMenu.addEventListener("mouseleave", () => { heardVoice = null; stopVoice(); });
+  // Each keyboard is heard as the menu moves to it, so it is chosen by ear.
+  let heardSwitch = "";
+  const hearSwitch = (e) => {
+    const b = e.target.closest("button");
+    if (!b || !b.dataset.id || b.dataset.id === heardSwitch) return;
+    heardSwitch = b.dataset.id;
+    vscode.postMessage({ type: "typingSoundPreview", id: heardSwitch });
+  };
+  ui.keysMenu.addEventListener("mouseover", hearSwitch);
+  ui.keysMenu.addEventListener("focusin", hearSwitch);
+  const menuCtl = { mode: modeCtl, voice: voiceCtl, keys: keysCtl };
+
+
 
   // Tooltips: an element's data-tip shows under it after a moment's hover, or at once while one is
   // showing or just was, the way VS Code's own hovers do; and on keyboard focus. A click hides it.
@@ -1149,7 +1223,7 @@ export function panelHtml(cspSource: string): string {
 
   function showTip(el) {
     clearTimeout(tipTimer);
-    if ((el === ui.speed && !ui.speedMenu.hidden) || (el === ui.ompThink && !ui.thinkMenu.hidden)) return;
+    if (menus.some((m) => m.btn === el && !m.menu.hidden)) return;
     tipTarget = el;
     ui.tip.textContent = el.dataset.tip;
     ui.tip.hidden = false;

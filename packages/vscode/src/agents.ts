@@ -19,6 +19,8 @@ export type Host = {
 export type Agent = {
   id: string
   label: string
+  /** The command that starts it in a terminal, where it has one: Cursor is an editor, so it hasn't. */
+  run?: string
   /** Its CLI is on the PATH, or its configuration is there. */
   detect(host: Host): boolean
   /** Configured to run `command` as the pair server. */
@@ -34,6 +36,7 @@ export const AGENTS: Agent[] = [
   {
     id: "omp",
     label: "OMP",
+    run: "omp",
     detect: (host) => !!findOmp(host) || exists(path.join(host.home, ".omp")),
     isSetUp: (host, command) => {
       const data = readJson(ompFile(host))
@@ -62,6 +65,7 @@ export const AGENTS: Agent[] = [
   {
     id: "claude",
     label: "Claude Code",
+    run: "claude",
     detect: (host) => !!which(host, "claude", [path.join(host.home, ".local", "bin")]) || exists(claudeFile(host)),
     isSetUp: (host, command) => readJson(claudeFile(host))?.mcpServers?.[SERVER]?.command === command,
     async setUp(host, command) {
@@ -80,6 +84,7 @@ export const AGENTS: Agent[] = [
   {
     id: "codex",
     label: "Codex",
+    run: "codex",
     detect: (host) => !!which(host, "codex") || exists(codexDir(host)),
     isSetUp: (host, command) => {
       const text = readText(path.join(codexDir(host), "config.toml"))
@@ -96,6 +101,7 @@ export const AGENTS: Agent[] = [
   {
     id: "opencode",
     label: "OpenCode",
+    run: "opencode",
     detect: (host) => !!which(host, "opencode", [path.join(host.home, ".opencode", "bin")]) || exists(opencodeDir(host)),
     isSetUp: (host, command) =>
       ["config.json", "opencode.json", "opencode.jsonc"].some(
@@ -113,6 +119,7 @@ export const AGENTS: Agent[] = [
   {
     id: "gemini",
     label: "Gemini CLI",
+    run: "gemini",
     detect: (host) => !!which(host, "gemini") || exists(path.join(host.home, ".gemini")),
     isSetUp: (host, command) => readJson(geminiFile(host))?.mcpServers?.[SERVER]?.command === command,
     async setUp(host, command) {

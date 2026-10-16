@@ -1,4 +1,4 @@
-// An OMP extension the Pair panel loads into the OMP it starts (`omp -e`): before each request,
+// An OMP extension an OMP started from the panel loads (`omp -e`): before each request,
 // it cuts the pair `step` calls the programmer interrupted back to what played. See history.ts.
 
 import { playedOnly } from "./history"

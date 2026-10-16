@@ -2,7 +2,7 @@
 // speech engine's native code) that loads Kokoro once and makes one WAV per line it is given.
 // Lines in: { id, text, voice, speed, out }. Lines out: { type: "ready" }, then per line
 // { id, ok, seconds } or { id, ok: false, error }. AI_PAIR_KOKORO_PATH names the kokoro-js module
-// to load — OMP's installed copy, so the model and its runtime are only ever downloaded once.
+// to load — the copy the extension fetched into its own storage, so it is only ever downloaded once.
 
 import * as fs from "node:fs"
 import * as readline from "node:readline"

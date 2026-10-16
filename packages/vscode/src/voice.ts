@@ -1,9 +1,9 @@
 // The agent's voice, on this machine, kept warm in its own small process and fed one sentence at a
-// time: the next is made while the last is still sounding. Two engines: Kokoro, the local speech
-// model OMP ships (bun or node runs it, since VS Code's runtime refuses its native code), and
-// Chatterbox Turbo, more natural but heavier, on Apple Silicon's GPU through mlx-audio (uv runs it).
-// With no warm Kokoro to be had, `omp say` speaks each line itself: slower to start, but the same
-// voice, still local.
+// time: the next is made while the last is still sounding. Two engines, both ours to fetch and run,
+// whichever agent is talking: Kokoro, a light local speech model (bun or node runs it, since
+// VS Code's runtime refuses its native code), and Chatterbox Turbo, more natural but heavier: on
+// an Apple Silicon Mac its GPU through mlx-audio, everywhere else the original PyTorch form, on an
+// NVIDIA card when there is one (uv runs both).
 
 import { spawn, type ChildProcess } from "node:child_process"
 import * as fs from "node:fs"
@@ -12,8 +12,8 @@ import * as path from "node:path"
 import * as readline from "node:readline"
 import * as vscode from "vscode"
 import type { VoicePort } from "@ai-pair/core"
-import { execProgram, findOmp, ompFile, which, type Host } from "./agents"
-import type { NarrationPanel, VoicePanelPort, VoiceStatus } from "./panel"
+import { execProgram, which, type Host } from "./agents"
+import type { NarrationPanel, VoiceChoices, VoicePanelPort, VoiceStatus } from "./panel"
 import { SpeechQueue } from "./voiceQueue"
 
 const HOST: Host = { home: os.homedir(), env: process.env, platform: process.platform, exec: execProgram }
@@ -21,31 +21,48 @@ const HOST: Host = { home: os.homedir(), env: process.env, platform: process.pla
 /** Which speech model talks. */
 export type VoiceModel = "kokoro" | "chatterbox"
 
-/** The Kokoro voices OMP offers, with the names a person picks from. */
-export const VOICES: Array<{ id: string; label: string }> = [
-  { id: "af_heart", label: "Heart · US, female" },
-  { id: "af_bella", label: "Bella · US, female" },
-  { id: "af_nicole", label: "Nicole · US, female" },
-  { id: "af_aoede", label: "Aoede · US, female" },
-  { id: "af_kore", label: "Kore · US, female" },
-  { id: "af_sarah", label: "Sarah · US, female" },
-  { id: "am_michael", label: "Michael · US, male" },
-  { id: "am_fenrir", label: "Fenrir · US, male" },
-  { id: "am_puck", label: "Puck · US, male" },
-  { id: "bf_emma", label: "Emma · UK, female" },
-  { id: "bm_george", label: "George · UK, male" },
-  { id: "bm_fable", label: "Fable · UK, male" },
+/** The Kokoro voices, with the names a person picks from: a name, and where it's from. */
+export const VOICES: Array<{ id: string; name: string; tag: string }> = [
+  { id: "af_heart", name: "Heart", tag: "US · female" },
+  { id: "af_bella", name: "Bella", tag: "US · female" },
+  { id: "af_nicole", name: "Nicole", tag: "US · female" },
+  { id: "af_aoede", name: "Aoede", tag: "US · female" },
+  { id: "af_kore", name: "Kore", tag: "US · female" },
+  { id: "af_sarah", name: "Sarah", tag: "US · female" },
+  { id: "am_michael", name: "Michael", tag: "US · male" },
+  { id: "am_fenrir", name: "Fenrir", tag: "US · male" },
+  { id: "am_puck", name: "Puck", tag: "US · male" },
+  { id: "bf_emma", name: "Emma", tag: "UK · female" },
+  { id: "bm_george", name: "George", tag: "UK · male" },
+  { id: "bm_fable", name: "Fable", tag: "UK · male" },
 ]
 
-/** Chatterbox runs on the GPU of an Apple Silicon Mac; nowhere else is it quick enough to keep up. */
-const CHATTERBOX_HERE = process.platform === "darwin" && process.arch === "arm64"
+/**
+ * The Kokoro library the voice runs, pinned, and the onnx runtime it is known to work with: fetched
+ * once into the extension's own storage, like Chatterbox into uv's, so the voice is AI Pair's, not
+ * any agent's — it speaks for every harness the same.
+ */
+const KOKORO_VERSION = "1.2.1"
+const KOKORO_PACKAGE = {
+  private: true,
+  type: "module",
+  dependencies: { "kokoro-js": KOKORO_VERSION },
+  overrides: { "onnxruntime-node": "1.26.0" },
+  trustedDependencies: ["onnxruntime-node"],
+}
 
 /**
- * What uv runs Chatterbox with: a pinned mlx-audio, since the worker reaches into its Chatterbox
- * model for the built-in voice, and the 4-bit model, about 1.5 times faster than it speaks on an M3.
+ * How Chatterbox runs here. An Apple Silicon Mac gets the MLX form on its GPU: a pinned mlx-audio,
+ * since the worker reaches into its Chatterbox model for the built-in voice, and the 4-bit model,
+ * about 1.5 times faster than it speaks on an M3. Everywhere else gets the original PyTorch form
+ * (Resemble's own package, pinned), which wants an NVIDIA card to keep up and runs slower without.
  */
+const CHATTERBOX_MLX = process.platform === "darwin" && process.arch === "arm64"
 const MLX_AUDIO = "mlx-audio==0.5.9"
 const CHATTERBOX_MODEL = "mlx-community/chatterbox-turbo-4bit"
+const CHATTERBOX_TORCH = "chatterbox-tts==0.1.7"
+/** Chatterbox's watermarker still reads its files through pkg_resources, which newer setuptools dropped. */
+const CHATTERBOX_TORCH_WITH = "setuptools<81"
 
 /**
  * The session's speed carries over to the voice up to here: faster is hard to follow. Below 1 it
@@ -58,6 +75,8 @@ const TALK_RANGE = { min: 0.5, max: 2 }
 
 export type VoiceOptions = {
   extensionPath: string
+  /** The extension's own storage: the Kokoro runtime is fetched into it. */
+  storagePath: string
   config(): {
     enabled: boolean
     model: VoiceModel
@@ -70,7 +89,6 @@ export type VoiceOptions = {
     /** The session's speed: the panel's speed menu. */
     pace: number
     runtimePath: string
-    ompPath: string
   }
   /** Writes the `aiPair.voice.enabled` setting. */
   setEnabled(on: boolean): void
@@ -152,42 +170,46 @@ export class VoiceEngine implements VoicePort, VoicePanelPort {
     this.begin(allowSetup)
   }
 
-  pickVoice(): void {
+  /**
+   * What the panel's voice menu offers: both engines' voices under friendly names, the
+   * programmer's own recording among Chatterbox's, and a mark on a voice whose engine
+   * still has to be fetched. Only asked where the answer is cheap and sure.
+   */
+  choices(): VoiceChoices {
+    const config = this.options.config()
+    const kokoroFetched = fs.existsSync(path.join(this.options.storagePath, `kokoro-${KOKORO_VERSION}`, "node_modules", "kokoro-js", "dist", "kokoro.js"))
+    const chatterboxFetched = CHATTERBOX_MLX
+      ? fs.existsSync(path.join(HOST.home, ".cache", "huggingface", "hub", `models--${CHATTERBOX_MODEL.replace("/", "--")}`))
+      : true
+    // A voice's shipped sample file, when there is one: the menu plays it on hover, so a
+    // voice is heard at once without warming its engine up.
+    const sample = (name: string) => {
+      const file = path.join(this.options.extensionPath, "media", "voices", name)
+      return fs.existsSync(file) ? { preview: file } : {}
+    }
+    return {
+      current: { model: config.model, voice: config.model === "kokoro" ? config.voice : config.chatterboxVoice },
+      kokoro: VOICES.map((v) => ({ model: "kokoro", voice: v.id, name: v.name, tag: v.tag, ...(kokoroFetched ? {} : { download: true }), ...sample(`${v.id}.mp3`) })),
+      chatterboxNote: CHATTERBOX_MLX ? "Chatterbox · more natural, about 1.3 GB fetched once" : "Chatterbox · more natural, a few GB fetched once, best with an NVIDIA card",
+      chatterbox: [
+        { model: "chatterbox", voice: "", name: "Chatterbox's own voice", tag: "built in", ...(chatterboxFetched ? {} : { download: true }), ...sample("chatterbox.mp3") },
+        ...(config.chatterboxVoice
+          ? [{ model: "chatterbox", voice: config.chatterboxVoice, name: path.basename(config.chatterboxVoice), tag: "your recording", ...(chatterboxFetched ? {} : { download: true }) }]
+          : []),
+      ],
+    }
+  }
+
+  /** The panel menu's pick: keep it, and say hello in it so it's chosen by ear. */
+  choose(model: string, voice: string): void {
+    if (model !== "kokoro" && model !== "chatterbox") return
     void (async () => {
-      const config = this.options.config()
-      type Item = vscode.QuickPickItem & { model?: VoiceModel; voice?: string; browse?: boolean }
-      const mark = (model: VoiceModel, voice: string) => (config.model === model && (model === "kokoro" ? config.voice : config.chatterboxVoice) === voice ? "current" : undefined)
-      const items: Item[] = [
-        { label: "Kokoro · light, works everywhere", kind: vscode.QuickPickItemKind.Separator },
-        ...VOICES.map((v): Item => ({ label: v.label, description: mark("kokoro", v.id) ?? v.id, model: "kokoro", voice: v.id })),
-      ]
-      if (CHATTERBOX_HERE) {
-        const recording = config.chatterboxVoice
-        items.push(
-          { label: "Chatterbox · more natural, Apple Silicon, about 1.3 GB fetched once", kind: vscode.QuickPickItemKind.Separator },
-          { label: "Chatterbox's own voice", description: mark("chatterbox", ""), model: "chatterbox", voice: "" },
-          ...(recording ? [{ label: path.basename(recording), description: mark("chatterbox", recording) ?? "the recording you chose", model: "chatterbox" as const, voice: recording }] : []),
-          { label: "Sound like a recording…", description: "10 seconds or more of one person speaking clearly", browse: true },
-        )
-      }
-      const picked = await vscode.window.showQuickPick(items, { title: "Whose voice should the agent have?", placeHolder: "All of them run on this machine." })
-      if (!picked) return
-      let model = picked.model
-      let voice = picked.voice
-      if (picked.browse) {
-        const files = await vscode.window.showOpenDialog({
-          title: "A recording of the voice: one person, speaking clearly, who agreed to be copied",
-          canSelectMany: false,
-          filters: { Audio: ["wav", "mp3", "flac", "m4a"] },
-        })
-        if (!files?.[0]) return
-        model = "chatterbox"
-        voice = files[0].fsPath
-      }
-      if (!model || voice === undefined) return
       const sameModel = model === this.model
       await this.options.setVoice(model, voice)
-      if (!this.on) return
+      if (!this.on) {
+        this.publish()
+        return
+      }
       if (sameModel) {
         this.publish()
         if (this.ready) void this.speak("Hi. I'll talk while we code.")
@@ -196,6 +218,18 @@ export class VoiceEngine implements VoicePort, VoicePanelPort {
       this.followModel(true)
       await this.starting
       if (this.ready) void this.speak("Hi. I'll talk while we code.")
+    })()
+  }
+
+  /** Sound like the programmer's own recording: pick the file, then it's a voice like any other. */
+  chooseRecording(): void {
+    void (async () => {
+      const files = await vscode.window.showOpenDialog({
+        title: "A recording of the voice: one person, speaking clearly, who agreed to be copied",
+        canSelectMany: false,
+        filters: { Audio: ["wav", "mp3", "flac", "m4a"] },
+      })
+      if (files?.[0]) this.choose("chatterbox", files[0].fsPath)
     })()
   }
 
@@ -255,10 +289,15 @@ export class VoiceEngine implements VoicePort, VoicePanelPort {
     this.state = "loading"
     this.detail = undefined
     this.publish()
-    const warmed = model === "chatterbox" ? (await this.warmChatterbox(allowSetup), true) : await this.warmKokoro(allowSetup)
+    if (model === "chatterbox") await this.warmChatterbox(allowSetup)
+    else await this.warmKokoro(allowSetup)
     if (seq !== this.startSeq) return
-    if (warmed) {
-      this.queue = new SpeechQueue<string>({
+    // Chatterbox is a natural voice played back faster or slower to follow a pace, so fitting each
+    // line to its typing was heard as speeding up and slowing down: its queue keeps one pace (the
+    // programmer's speed), and only pauses spread its sentences. Kokoro is made at a pace instead,
+    // which sounds fine a touch either way, so it still fits.
+    this.queue = new SpeechQueue<string>(
+      {
         synth: (text, speedScale) => this.synth(text, speedScale),
         play: (file) => this.play(file),
         stopPlaying: () => this.player?.kill("SIGTERM"),
@@ -266,61 +305,68 @@ export class VoiceEngine implements VoicePort, VoicePanelPort {
           this.playbackRates.delete(file)
           fs.rm(file, { force: true }, () => {})
         },
-      })
-    } else {
-      const omp = this.ompCommand()
-      if (!omp) {
-        throw new Error(
-          "no local voice was found. The voice is OMP's Kokoro: install OMP, or set `aiPair.voice.runtimePath` to a bun or node program.",
-        )
-      }
-      // No warm process to be had: `omp say` makes and plays each line itself, seconds slower.
-      this.queue = new SpeechQueue<string>({
-        synth: async (text) => text,
-        play: (text) => this.run(omp, ["say", "--voice", this.options.config().voice, text], true),
-        stopPlaying: () => this.player?.kill("SIGTERM"),
-      })
-      this.detail = "Speaking through omp say; each line takes a few seconds."
-    }
+      },
+      model === "chatterbox",
+    )
     this.state = "ready"
     this.publish()
   }
 
-  /** Starts the warm Kokoro process; false when this machine has neither the runtime nor a way to run it. */
-  private async warmKokoro(allowSetup: boolean): Promise<boolean> {
-    let runtime = findKokoroRuntime()
-    if (!runtime && allowSetup) {
-      const omp = this.ompCommand()
-      if (omp) {
-        await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: "AI Pair: getting the local voice (one-time download)…" },
-          () => this.run(omp, ["say", "--out", path.join(os.tmpdir(), "ai-pair-voice-setup.wav"), "Voice ready."], false),
-        )
-        runtime = findKokoroRuntime()
-      }
-    }
-    if (!runtime) return false
+  /**
+   * Starts the warm Kokoro process, or says why it can't. Its library and model are fetched once
+   * into the extension's own storage — only on a person's click, like Chatterbox: about 100 MB of
+   * model in a few hundred MB of runtime. No agent need be installed for the voice to work.
+   */
+  private async warmKokoro(allowSetup: boolean): Promise<void> {
     const js = this.jsRuntime()
-    if (!js) return false
-    const kokoroPath = path.join(runtime, "node_modules", "kokoro-js", "dist", "kokoro.js")
+    if (!js) {
+      throw new Error(
+        "Kokoro runs under bun or node, and neither was found (VS Code's own runtime can't load its native code). Install one, or set `aiPair.voice.runtimePath`.",
+      )
+    }
+    const dir = path.join(this.options.storagePath, `kokoro-${KOKORO_VERSION}`)
+    const kokoroPath = path.join(dir, "node_modules", "kokoro-js", "dist", "kokoro.js")
+    if (!fs.existsSync(kokoroPath)) {
+      if (!allowSetup) throw new Error("Kokoro isn't downloaded yet. Turn the voice off and on to fetch it.")
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: "AI Pair: getting Kokoro, the local voice (one-time download)…" },
+        () => this.installKokoro(dir, js),
+      )
+    }
     await this.spawnWorker(js, [path.join(this.options.extensionPath, "dist", "voiceWorker.js")], {
-      cwd: runtime,
+      cwd: dir,
       env: { ...process.env, AI_PAIR_KOKORO_PATH: kokoroPath },
       timeoutMs: 300_000,
     })
-    return true
+  }
+
+  /** Fetches the pinned Kokoro library into `dir` with bun, or with the npm that came with node. */
+  private async installKokoro(dir: string, js: string): Promise<void> {
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, "package.json"), `${JSON.stringify(KOKORO_PACKAGE, null, "\t")}\n`)
+    if (path.basename(js).startsWith("bun")) {
+      await this.run(js, ["install", "--cwd", dir], false)
+      return
+    }
+    const sibling = path.join(path.dirname(js), process.platform === "win32" ? "npm.cmd" : "npm")
+    const npm = fs.existsSync(sibling) ? sibling : which(HOST, "npm", ["/opt/homebrew/bin", "/usr/local/bin", path.join(HOST.home, ".local", "bin")])
+    if (!npm) throw new Error("npm wasn't found beside node, so Kokoro can't be fetched. Install bun or npm, or point `aiPair.voice.runtimePath` at bun.")
+    await this.run(npm, ["install", "--prefix", dir, "--no-audit", "--no-fund", "--loglevel=error"], false)
   }
 
   /**
-   * Starts the warm Chatterbox process under uv, or says why it can't. Only a person's click may
-   * fetch: uv's packages and the model (about 1.3 GB together, kept in uv's and Hugging Face's
-   * caches) are otherwise only used if they are already on the machine.
+   * Starts the warm Chatterbox process under uv, or says why it can't: the MLX worker on an Apple
+   * Silicon Mac, the PyTorch one everywhere else. Only a person's click may fetch: uv's packages
+   * and the model (kept in uv's and Hugging Face's caches) are otherwise only used if they are
+   * already on the machine.
    */
   private async warmChatterbox(allowSetup: boolean): Promise<void> {
-    if (!CHATTERBOX_HERE) throw new Error("Chatterbox runs on Apple Silicon Macs only. Pick a Kokoro voice instead.")
     const uv = which(HOST, "uv", [path.join(HOST.home, ".local", "bin"), path.join(HOST.home, ".cargo", "bin"), "/opt/homebrew/bin", "/usr/local/bin"])
     if (!uv) throw new Error("Chatterbox is run by uv, which wasn't found. Install it (https://docs.astral.sh/uv/), or pick a Kokoro voice.")
-    const args = ["tool", "run", ...(allowSetup ? [] : ["--offline"]), "--from", MLX_AUDIO, "python", path.join(this.options.extensionPath, "dist", "chatterboxWorker.py")]
+    const dist = path.join(this.options.extensionPath, "dist")
+    const args = CHATTERBOX_MLX
+      ? ["tool", "run", ...(allowSetup ? [] : ["--offline"]), "--from", MLX_AUDIO, "python", path.join(dist, "chatterboxWorker.py")]
+      : ["tool", "run", ...(allowSetup ? [] : ["--offline"]), "--python", "3.12", "--from", CHATTERBOX_TORCH, "--with", CHATTERBOX_TORCH_WITH, "python", path.join(dist, "chatterboxTorchWorker.py")]
     const env = { ...process.env, AI_PAIR_CHATTERBOX_MODEL: CHATTERBOX_MODEL, TQDM_DISABLE: "1", ...(allowSetup ? {} : { HF_HUB_OFFLINE: "1" }) }
     const warm = () => this.spawnWorker(uv, args, { env, timeoutMs: allowSetup ? 1_800_000 : 120_000 })
     if (!allowSetup) {
@@ -330,7 +376,12 @@ export class VoiceEngine implements VoicePort, VoicePanelPort {
       return
     }
     await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: "AI Pair: starting Chatterbox (the first time fetches about 1.3 GB)…" },
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: CHATTERBOX_MLX
+          ? "AI Pair: starting Chatterbox (the first time fetches about 1.3 GB)…"
+          : "AI Pair: starting Chatterbox (the first time fetches a few GB)…",
+      },
       warm,
     )
   }
@@ -461,9 +512,7 @@ export class VoiceEngine implements VoicePort, VoicePanelPort {
     child.kill("SIGTERM")
   }
 
-  private ompCommand(): string | undefined {
-    return this.options.config().ompPath.trim() || findOmp(HOST)
-  }
+
 
   /** A bun or node that can load the speech engine's native code; VS Code's own runtime cannot. */
   private jsRuntime(): string | undefined {
@@ -487,24 +536,7 @@ export class VoiceEngine implements VoicePort, VoicePanelPort {
   }
 }
 
-/** Where OMP keeps its Kokoro runtime, newest first; undefined until OMP has spoken once. */
-function findKokoroRuntime(): string | undefined {
-  const roots = [
-    path.join(path.dirname(ompFile(HOST)), "cache", "tts-runtime"),
-    path.join(HOST.home, ".omp", "agent", "cache", "tts-runtime"),
-  ]
-  for (const root of roots) {
-    try {
-      for (const name of fs.readdirSync(root).sort().reverse()) {
-        const dir = path.join(root, name)
-        if (fs.existsSync(path.join(dir, "node_modules", "kokoro-js", "dist", "kokoro.js"))) return dir
-      }
-    } catch {
-      // Not installed here.
-    }
-  }
-  return undefined
-}
+
 
 let linuxPlayer: string | undefined
 

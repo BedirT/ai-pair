@@ -60,33 +60,22 @@
         "category": "AI Pair"
       },
       {
-        "command": "aiPair.startOmp",
-        "title": "Start OMP",
+        "command": "aiPair.startAgent",
+        "title": "Start Agent",
         "category": "AI Pair",
         "icon": "$(play)"
       },
       {
-        "command": "aiPair.stopOmp",
-        "title": "Stop OMP",
-        "category": "AI Pair",
-        "icon": "$(debug-stop)"
-      },
-      {
-        "command": "aiPair.abortOmp",
-        "title": "Interrupt OMP",
-        "category": "AI Pair"
-      },
-      {
-        "command": "aiPair.newOmpChat",
-        "title": "New OMP Chat",
-        "category": "AI Pair",
-        "icon": "$(add)"
-      },
-      {
-        "command": "aiPair.selectOmpModel",
-        "title": "Select OMP Model",
+        "command": "aiPair.pickStartAgent",
+        "title": "Choose Agent to Start",
         "category": "AI Pair",
         "icon": "$(chevron-down)"
+      },
+      {
+        "command": "aiPair.pickMode",
+        "title": "Choose Pairing Mode",
+        "category": "AI Pair",
+        "icon": "$(book)"
       },
       {
         "command": "aiPair.toggleVoice",
@@ -157,48 +146,6 @@
         {
           "command": "aiPair.askAboutSelection",
           "when": "aiPair.active && editorHasSelection"
-        },
-        {
-          "command": "aiPair.startOmp",
-          "when": "!aiPair.ompActive"
-        },
-        {
-          "command": "aiPair.stopOmp",
-          "when": "aiPair.ompActive"
-        },
-        {
-          "command": "aiPair.abortOmp",
-          "when": "aiPair.ompActive"
-        },
-        {
-          "command": "aiPair.newOmpChat",
-          "when": "aiPair.ompActive"
-        },
-        {
-          "command": "aiPair.selectOmpModel",
-          "when": "aiPair.ompActive"
-        }
-      ],
-      "view/title": [
-        {
-          "command": "aiPair.startOmp",
-          "when": "view == aiPair.narration && !aiPair.ompActive",
-          "group": "navigation@1"
-        },
-        {
-          "command": "aiPair.newOmpChat",
-          "when": "view == aiPair.narration && aiPair.ompActive",
-          "group": "navigation@1"
-        },
-        {
-          "command": "aiPair.selectOmpModel",
-          "when": "view == aiPair.narration && aiPair.ompActive",
-          "group": "navigation@2"
-        },
-        {
-          "command": "aiPair.stopOmp",
-          "when": "view == aiPair.narration && aiPair.ompActive",
-          "group": "navigation@3"
         }
       ]
     },
@@ -235,24 +182,6 @@
           "maximum": 10,
           "markdownDescription": "How many batches the agent may write ahead of what you're watching. It then plays without pausing to think between batches. When you step in, what it wrote ahead is dropped, so more means more thrown away. `0` makes it wait for each batch to finish."
         },
-        "aiPair.omp.path": {
-          "type": "string",
-          "default": "",
-          "scope": "machine",
-          "description": "Path to the omp program the Pair panel starts. Empty finds omp on the PATH, in ~/.local/bin, or in ~/.bun/bin."
-        },
-        "aiPair.omp.thinking": {
-          "type": "string",
-          "default": "",
-          "enum": ["", "off", "minimal", "low", "medium", "high", "xhigh", "max"],
-          "enumDescriptions": ["OMP's own default", "No thinking: fastest, weakest plans", "Barely any", "Quick: good for most pairing", "Balanced", "Careful: noticeable waits", "Slow", "Deepest: slowest, long silences between batches"],
-          "markdownDescription": "How hard the panel's OMP thinks before each move. Less thinking means shorter waits between batches while you pair; `low` or `medium` suit most sessions. Empty uses OMP's own setting. Takes effect when OMP is next started."
-        },
-        "aiPair.omp.model": {
-          "type": "string",
-          "default": "",
-          "description": "Model the panel's OMP starts with (OMP's fuzzy match, like opus or openai/gpt-5.2). Empty uses OMP's own default. The panel's Model button changes it for the chat."
-        },
         "aiPair.voice.enabled": {
           "type": "boolean",
           "default": false,
@@ -264,8 +193,8 @@
           "default": "kokoro",
           "enum": ["kokoro", "chatterbox"],
           "enumDescriptions": [
-            "Kokoro, the light local speech model OMP ships. Works everywhere; the first turn-on may download it, about 100 MB of model in a few hundred MB of runtime.",
-            "Chatterbox Turbo by Resemble AI: more natural, on Apple Silicon Macs only, run by uv. The first turn-on fetches about 1.3 GB."
+            "Kokoro, a light local speech model. Works everywhere; the first turn-on downloads it into the extension's storage, about 100 MB of model in a few hundred MB of runtime.",
+            "Chatterbox Turbo by Resemble AI: more natural, run by uv. On an Apple Silicon Mac it uses the GPU; elsewhere it wants an NVIDIA card to keep up, and the first turn-on fetches a few GB (about 1.3 GB on a Mac)."
           ],
           "markdownDescription": "Which speech model talks. The panel's Pick a voice changes it."
         },

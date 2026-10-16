@@ -249,6 +249,34 @@ it("spreads sentences across the span they cover, a touch slower and with pauses
   }
 })
 
+it("keeps a steady voice at its own pace over any span, spreading with pauses only", async () => {
+  vi.useFakeTimers()
+  try {
+    const f = fakeBackend()
+    const queue = new SpeechQueue<string>(f.backend, true)
+    // The same talk first over long typing, then over barely any: a fitted voice would go to the
+    // two ends of its pace range; a steady one never leaves its own.
+    const done = queue.speak("One two three. Four five six.", 6000)
+    void queue.speak("Seven eight nine.", 10)
+    expect(f.speeds[0]).toBe(1)
+    f.settleSynth("One two three.")
+    await f.tick()
+    f.settlePlay("One two three.")
+    f.settleSynth("Four five six.")
+    await f.tick()
+    // The pause between its sentences is still there: only the pace stopped changing.
+    expect(f.played).toEqual(["One two three."])
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(f.played).toEqual(["One two three.", "Four five six."])
+    f.settlePlay("Four five six.")
+    await done
+    await f.tick()
+    expect(f.speeds.every((s) => s === 1)).toBe(true)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
 it("drops what is only for the eyes: code blocks, link targets, markup", () => {
   expect(spokenText("See **[the docs](https://x.dev)** and https://y.dev/a")).toBe("See the docs and a link")
   expect(spokenText("Type this:\n```ts\nconst x = 1\n```\nDone.")).toBe("Type this: Done.")

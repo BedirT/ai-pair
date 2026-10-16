@@ -153,6 +153,8 @@ export type RunResult = {
   running?: true
   /** The terminal's shell, e.g. `pwsh` or `zsh`, when it's known. */
   shell?: string
+  /** What the voice read out about it as it landed, so the agent goes on from it instead of repeating it. */
+  said?: string
 }
 
 /**
@@ -229,6 +231,8 @@ export type Report = {
   /** The agent cursor's line, when it isn't where the agent last saw it: in this report's code, or an earlier report. */
   cursor?: Code
   waiting?: true
+  /** Playback is paused in the editor: batches are held, nothing plays, until the programmer resumes. */
+  paused?: true
   /** A batch's `run` held until the programmer allows it: nothing after it plays until they answer. */
   confirming?: { id: number; command: string }
   /**
@@ -236,6 +240,14 @@ export type Report = {
    * report, and in the next one whenever it changes.
    */
   voice?: "on" | "off"
+  /**
+   * The pairing mode the programmer picked for this session, fixed once it starts: in the
+   * session's first report only. "learn" comes with `drive`: who does the work while learning.
+   */
+  mode?: "build" | "learn"
+  /** With mode "learn": show = the agent drives and teaches, together = worked examples then the
+   *  programmer tries the next one like it, try = the programmer drives, the agent navigates. */
+  drive?: "show" | "together" | "try"
 }
 
 export type FileContent = {

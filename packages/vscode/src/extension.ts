@@ -6,8 +6,7 @@ import { discoveryDir } from "@ai-pair/protocol"
 import { playDemo } from "./demo"
 import { VsCodeEditor } from "./editor"
 import { NarrationPanel } from "./panel"
-import { OmpHost } from "./omp"
-import { registerServerProvider, setUpAgent, writeLauncher } from "./setup"
+import { AgentStarter, registerServerProvider, setUpAgent, writeLauncher } from "./setup"
 import { VoiceEngine, type VoiceModel } from "./voice"
 
 /** The switches whose recordings ship in media/keys, one folder each, as the picker names them. */
@@ -20,8 +19,17 @@ const SWITCHES: Record<string, { label: string; detail: string }> = {
   buckling: { label: "Buckling Spring", detail: "IBM Model M: loud, crisp, old-school" },
 }
 
+/** The pairing modes the panel offers: build it, or learn it at three splits of the work. */
+type ModeId = "build" | "learn-show" | "learn-together" | "learn-try"
+const MODES: Record<ModeId, { label: string; description: string; drive?: "show" | "together" | "try" }> = {
+  build: { label: "Build", description: "Get it done; show me as you go" },
+  "learn-show": { label: "Show me", description: "The agent drives and teaches", drive: "show" },
+  "learn-together": { label: "Together", description: "A worked example, then I try the next one like it", drive: "together" },
+  "learn-try": { label: "Let me try", description: "I drive; the agent navigates", drive: "try" },
+}
+
 /** Returned from `activate`, for integration tests. */
-export type Api = { controller: Controller; playDemo: () => Promise<void>; launcher: string; ready: Promise<void>; omp: OmpHost }
+export type Api = { controller: Controller; playDemo: () => Promise<void>; launcher: string; ready: Promise<void> }
 
 export function activate(context: vscode.ExtensionContext): Api {
   const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir()
@@ -52,16 +60,32 @@ export function activate(context: vscode.ExtensionContext): Api {
   const ready = bridge.start()
   ready.catch((e: unknown) => void vscode.window.showErrorMessage(`AI Pair couldn't start its local server: ${String(e)}`))
   const launcher = writeLauncher(context.extensionPath)
-  const omp = new OmpHost(panel, {
-    launcher,
-    extension: path.join(context.extensionPath, "dist", "ompExtension.js"),
-    root: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-    config: () => ({ path: config().get("omp.path", ""), model: config().get("omp.model", ""), thinking: config().get("omp.thinking", "") }),
-    isPairActive: () => controller.isActive,
-  })
-  panel.omp = omp
+  const starter = new AgentStarter(launcher, context.globalState, path.join(context.extensionPath, "dist", "ompExtension.js"))
+  panel.starter = starter
+  // The pairing mode: remembered across sessions, applied to the next one; a running session keeps its own.
+  let modeId: ModeId =
+    (["build", "learn-show", "learn-together", "learn-try"] as ModeId[]).find((id) => id === context.globalState.get("aiPair.mode")) ?? "build"
+  const applyMode = (): void => {
+    const mode = MODES[modeId]
+    controller.setMode(mode.drive ? "learn" : "build", mode.drive)
+    panel.showMode({ id: modeId, label: mode.label })
+  }
+  const setMode = (id: ModeId): void => {
+    modeId = id
+    void context.globalState.update("aiPair.mode", modeId)
+    applyMode()
+  }
+  panel.mode = {
+    set: (id) => {
+      const found = (["build", "learn-show", "learn-together", "learn-try"] as ModeId[]).find((m) => m === id)
+      if (found) setMode(found)
+    },
+    choice: () => ({ id: modeId, label: MODES[modeId].label }),
+  }
+  applyMode()
   const voice = new VoiceEngine(panel, {
     extensionPath: context.extensionPath,
+    storagePath: context.globalStorageUri.fsPath,
     config: () => ({
       enabled: config().get("voice.enabled", false),
       model: config().get<VoiceModel>("voice.model", "kokoro"),
@@ -70,7 +94,6 @@ export function activate(context: vscode.ExtensionContext): Api {
       rate: config().get("voice.rate", 1),
       pace: speed.get(),
       runtimePath: config().get("voice.runtimePath", ""),
-      ompPath: config().get("omp.path", ""),
     }),
     setEnabled: (on) => void config().update("voice.enabled", on, vscode.ConfigurationTarget.Global),
     setVoice: async (model, voice) => {
@@ -92,30 +115,24 @@ export function activate(context: vscode.ExtensionContext): Api {
       name: SWITCHES[key]!.label,
     }
   }
-  // Each switch is heard as the list moves to it, so it is chosen by ear.
-  const pickSwitch = async () => {
-    const current = config().get("typingSounds.switch", "holypanda")
-    const items = Object.entries(SWITCHES).map(([id, s]) => ({ id, label: s.label, description: id === current ? "current" : "", detail: s.detail }))
-    const quick = vscode.window.createQuickPick<(typeof items)[number]>()
-    quick.items = items
-    quick.placeholder = "Choose the keyboard switch you hear the agent type on (each plays as you move to it)"
-    quick.onDidChangeActive(([item]) => {
-      if (item) panel.previewTypingSound(vscode.Uri.joinPath(context.extensionUri, "media", "keys", item.id))
-    })
-    // No Promise.withResolvers: the extension still runs on VS Code builds with Node 20.
-    const picked = await new Promise<string | undefined>((resolve) => {
-      quick.onDidAccept(() => resolve(quick.selectedItems[0]?.id))
-      quick.onDidHide(() => resolve(undefined))
-      quick.show()
-      // Set once shown, so the current switch is the first one heard.
-      quick.activeItems = items.filter((i) => i.id === current)
-    })
-    quick.dispose()
-    if (!picked) return
-    const global = vscode.ConfigurationTarget.Global
-    await config().update("typingSounds.switch", picked, global)
-    // Choosing a switch is asking to hear it.
-    if (!config().get("typingSounds.enabled", false)) await config().update("typingSounds.enabled", true, global)
+  // The panel's keyboard menu: the switches by name and feel, each heard as it's moved to.
+  panel.switches = {
+    choices: () => ({
+      current: config().get("typingSounds.switch", "holypanda"),
+      items: Object.entries(SWITCHES).map(([id, s]) => ({ id, name: s.label, tag: s.detail })),
+    }),
+    set: (id) => {
+      if (!(id in SWITCHES)) return
+      void (async () => {
+        const global = vscode.ConfigurationTarget.Global
+        await config().update("typingSounds.switch", id, global)
+        // Choosing a switch is asking to hear it.
+        if (!config().get("typingSounds.enabled", false)) await config().update("typingSounds.enabled", true, global)
+      })()
+    },
+    preview: (id) => {
+      if (id in SWITCHES) panel.previewTypingSound(vscode.Uri.joinPath(context.extensionUri, "media", "keys", id))
+    },
   }
   panel.showTypingSounds(typingSounds())
   controller.setKeys(panel)
@@ -128,18 +145,15 @@ export function activate(context: vscode.ExtensionContext): Api {
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => bridge.writeDiscovery()),
     vscode.commands.registerCommand("aiPair.setUpAgent", () => setUpAgent(launcher)),
-    vscode.commands.registerCommand("aiPair.startOmp", () => omp.start()),
-    vscode.commands.registerCommand("aiPair.stopOmp", () => omp.stop()),
-    vscode.commands.registerCommand("aiPair.abortOmp", () => omp.abort()),
-    vscode.commands.registerCommand("aiPair.newOmpChat", () => omp.newChat()),
-    vscode.commands.registerCommand("aiPair.selectOmpModel", () => omp.pickModel()),
+    vscode.commands.registerCommand("aiPair.startAgent", () => starter.start()),
+    vscode.commands.registerCommand("aiPair.pickStartAgent", () => starter.pick()),
+    vscode.commands.registerCommand("aiPair.pickMode", () => panel.openMenu("mode")),
     vscode.commands.registerCommand("aiPair.toggleVoice", () => voice.toggle()),
-    vscode.commands.registerCommand("aiPair.selectVoice", () => voice.pickVoice()),
+    vscode.commands.registerCommand("aiPair.selectVoice", () => panel.openMenu("voice")),
     vscode.commands.registerCommand("aiPair.toggleTypingSounds", () =>
       config().update("typingSounds.enabled", !typingSounds().enabled, vscode.ConfigurationTarget.Global),
     ),
-    vscode.commands.registerCommand("aiPair.selectTypingSound", pickSwitch),
-    omp,
+    vscode.commands.registerCommand("aiPair.selectTypingSound", () => panel.openMenu("keys")),
     voice,
     editor,
     vscode.window.registerWebviewViewProvider(NarrationPanel.viewId, panel, {
@@ -159,7 +173,10 @@ export function activate(context: vscode.ExtensionContext): Api {
       if (e.affectsConfiguration("aiPair.voice.enabled")) voice.setEnabled(config().get("voice.enabled", false), true)
       if (e.affectsConfiguration("aiPair.voice.model")) voice.followModel(true)
       if (e.affectsConfiguration("aiPair.voice.voice") || e.affectsConfiguration("aiPair.voice.chatterboxVoice")) panel.showVoiceStatus(voice.status())
-      if (e.affectsConfiguration("aiPair.typingSounds")) panel.showTypingSounds(typingSounds())
+      if (e.affectsConfiguration("aiPair.typingSounds")) {
+        panel.showTypingSounds(typingSounds())
+        panel.showSwitchChoices()
+      }
     }),
     vscode.commands.registerCommand("aiPair.playDemo", () => {
       if (!vscode.workspace.workspaceFolders?.length) {
@@ -189,7 +206,7 @@ export function activate(context: vscode.ExtensionContext): Api {
       .then((answer) => answer && setUpAgent(launcher))
   }
 
-  return { controller, playDemo: () => playDemo(controller, root), launcher, ready, omp }
+  return { controller, playDemo: () => playDemo(controller, root), launcher, ready }
 }
 
 export function deactivate(): void {}

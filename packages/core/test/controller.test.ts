@@ -275,6 +275,21 @@ describe("timing", () => {
     expect((await until(controller.step([]))).voice).toBeUndefined()
   })
 
+  it("tells the agent the pairing mode when the session starts, and not again", async () => {
+    const { controller } = setup({ "a.ts": "" })
+    expect((await controller.start()).mode).toBe("build")
+    const next = await until(controller.step([]))
+    expect(next.mode).toBeUndefined()
+    await controller.end()
+    controller.setMode("learn", "together")
+    const start = await controller.start()
+    expect(start.mode).toBe("learn")
+    expect(start.drive).toBe("together")
+    // Picking another mode mid-session doesn't leak into the running one: it's told only at start.
+    controller.setMode("build")
+    expect((await until(controller.step([]))).mode).toBeUndefined()
+  })
+
   it("tells the key sounds of each keystroke as it lands, and of a deletion; rehearsals stay silent", async () => {
     const { editor, controller } = setup({ "a.ts": "  x\n" })
     const pressed: Array<{ key: string; text: string }> = []
@@ -1401,6 +1416,50 @@ describe("run", () => {
     ])
   })
 
+  it("reads a run's result out as it lands when nothing is planned after it, and tells the agent what it said", async () => {
+    const { editor, controller } = setup({}, { confirmCommands: false, workAheadBatches: 2 })
+    editor.commandScript["python a.py"] = { ms: 100, exitCode: 0, output: "5.0\n" }
+    const voice = new FakeVoice()
+    controller.setVoice(voice)
+    await controller.start()
+    await controller.step([{ do: [{ run: "python a.py" }] }])
+    const report = await until(controller.step([]))
+    expect(voice.spoken.at(-1)).toBe("It printed 5.0.")
+    expect(report.batches[0]!.runs![0]!.said).toBe("It printed 5.0.")
+
+    // The agent planned past it: what it queued says what comes next, not the editor.
+    await controller.step([{ do: [{ run: "python a.py" }] }])
+    await controller.step([{ say: "Next." }])
+    const ahead = await until(controller.step([]))
+    expect(ahead.batches[0]!.runs![0]!.said).toBeUndefined()
+    expect(voice.spoken.filter((w) => w.startsWith("It printed"))).toHaveLength(1)
+    await until(controller.end())
+  })
+
+  it("reads out what a person would read off the screen: a short output, a long one's end, a failure's last line", async () => {
+    const cases: Array<[{ exitCode: number; output: string }, string]> = [
+      [{ exitCode: 0, output: "" }, "It ran, with no output."],
+      [{ exitCode: 0, output: "a 2\nb 3\n" }, "It printed a 2, b 3."],
+      [{ exitCode: 0, output: "-1\n" }, "It printed -1."],
+      [{ exitCode: 0, output: "collected 3 items\n\n===== 3 passed in 0.12s =====\n" }, "It printed collected 3 items, 3 passed in 0.12s."],
+      [{ exitCode: 0, output: Array.from({ length: 40 }, (_, i) => `step ${i + 1}`).join("\n") }, "It printed 40 lines, ending with step 40."],
+      [{ exitCode: 0, output: "/Users/someone/projects/thing/build/output.bin\n" }, "It printed a long line."],
+      [{ exitCode: 1, output: 'Traceback (most recent call last):\n  File "a.py", line 3, in <module>\nNameError: name \'x\' is not defined\n' }, "It failed: NameError: name 'x' is not defined."],
+      [{ exitCode: 2, output: "x".repeat(300) }, "It failed, with exit code 2."],
+    ]
+    for (const [script, words] of cases) {
+      const { editor, controller } = setup({}, { confirmCommands: false })
+      editor.commandScript["go"] = { ms: 100, ...script }
+      const voice = new FakeVoice()
+      controller.setVoice(voice)
+      await controller.start()
+      await controller.step([{ do: [{ run: "go" }] }])
+      await until(controller.step([]))
+      expect(voice.spoken.at(-1)).toBe(words)
+      await until(controller.end())
+    }
+  })
+
   it("saves what the batch has typed before running a command, so the command reads it from disk", async () => {
     const { editor, controller } = setup({ "a.ts": "" }, { confirmCommands: false })
     await controller.start()
@@ -1546,6 +1605,101 @@ describe("run", () => {
     expect(editor.commands.map((c) => c.command)).toEqual(["npm test"])
   })
 
+  it("wakes a listening agent when its run finishes, instead of at the heartbeat", async () => {
+    const { controller } = setup({ "a.ts": "" }, { confirmCommands: false })
+    await controller.start()
+    await controller.step([{ do: [{ move: { file: "a.ts", line: 1, to: "line_end" } }, { type: "ab▌" }, { run: "npm test" }] }])
+    // The batch takes a few hundred ms to play; the heartbeat is 45 s. A `listen` settled well
+    // before that, carrying the run's result, is what lets the agent carry on from the output.
+    const report = await until(controller.listen(), 5_000)
+    expect(report.waiting).toBeUndefined()
+    expect(report.batches).toMatchObject([{ status: "completed", runs: [{ command: "npm test", exit_code: 0 }] }])
+  })
+
+  it("wakes an agent waiting with an empty batch when its run finishes, not after the batches behind it", async () => {
+    const { editor, controller } = setup({ "a.ts": "" }, { confirmCommands: false, workAheadBatches: 2 })
+    editor.commandScript["npm test"] = { ms: 1000, exitCode: 0 }
+    await controller.start()
+    await controller.step([{ do: [{ move: { file: "a.ts", line: 1, to: "line_end" } }, { type: "ab▌" }, { run: "npm test" }] }])
+    // Seconds of typing queued behind the run, while it runs: the output must not wait for it.
+    await until(controller.step([{ do: [{ type: "x".repeat(60) + "▌" }] }]))
+    const waited = track(controller.step([]))
+    await advance(2_000)
+    expect(waited.done).toBe(true)
+    expect(waited.value!.batches).toMatchObject([{ status: "completed", runs: [{ command: "npm test", exit_code: 0 }] }])
+    await until(controller.end())
+  })
+
+  it("fills the agent's thinking after news with the voice, fitting words, twice at most", async () => {
+    const { controller } = setup({}, { confirmCommands: false })
+    const voice = new FakeVoice()
+    controller.setVoice(voice)
+    await controller.start()
+    await controller.step([{ do: [{ run: "npm test" }] }])
+    await until(controller.listen(), 5_000)
+    const said = voice.spoken.length
+    expect(voice.spoken.at(-1)).toMatch(/^It ran/)
+    // The read-out fills the first seconds, and a quick answer needs no filler after it.
+    await advance(5_900)
+    expect(voice.spoken.length).toBe(said)
+    await advance(200)
+    expect(voice.spoken.slice(said)).toHaveLength(1)
+    expect(voice.spoken.at(-1)).toMatch(/think|moment|see/i)
+    await advance(15_000)
+    expect(voice.spoken.slice(said)).toHaveLength(2)
+    await advance(60_000)
+    expect(voice.spoken.slice(said)).toHaveLength(2)
+
+    // Nothing to answer, as after a quiet heartbeat: thinking then is no one's wait.
+    const quiet = await until(controller.listen(), 50_000)
+    expect(quiet.waiting).toBe(true)
+    await advance(20_000)
+    expect(voice.spoken.slice(said)).toHaveLength(2)
+    await until(controller.end())
+  })
+
+  it("takes back a filler not yet heard once the agent's own words come", async () => {
+    const { controller } = setup({}, { confirmCommands: false })
+    const voice = new FakeVoice()
+    controller.setVoice(voice)
+    await controller.start()
+    await controller.step([{ do: [{ run: "npm test" }] }])
+    await until(controller.listen(), 5_000)
+    voice.slowStart = true
+    await advance(6_100)
+    const filler = voice.spoken.at(-1)!
+    await controller.step([{ say: "It passed." }])
+    expect(voice.takenBack).toEqual([filler])
+    voice.start()
+    voice.finish()
+    await until(controller.end())
+  })
+
+  it("tells a waiting agent at once when the programmer pauses, and again when they resume", async () => {
+    const { controller } = setup({ "a.ts": "" })
+    await controller.start()
+    // A second of typing, so the batch is still playing throughout: only the pause and the
+    // resume can settle these `listen`s, not playback running dry.
+    await controller.step([{ do: [{ move: { file: "a.ts", line: 1, to: "line_end" } }, { type: "abcdefghij▌" }] }])
+    const first = track(controller.listen())
+    await advance(50)
+    expect(first.done).toBe(false)
+    controller.pause()
+    await advance(50)
+    expect(first.done).toBe(true)
+    expect(first.value!.paused).toBe(true)
+
+    // Still paused, a fresh `listen` waits again instead of spinning.
+    const second = track(controller.listen())
+    await advance(200)
+    expect(second.done).toBe(false)
+    controller.resume()
+    await advance(50)
+    expect(second.done).toBe(true)
+    expect(second.value!.paused).toBeUndefined()
+    await until(controller.end())
+  })
+
   it("tells the agent, and asks out loud, when a command waits for the programmer", async () => {
     const { controller } = setup({}, { maxBlockMs: 1000 })
     const voice = new FakeVoice()
@@ -1564,11 +1718,12 @@ describe("run", () => {
     await controller.start()
     await controller.step([{ do: [{ run: "npm test" }] }])
     await advance(10)
-    expect(voice.spoken.at(-1)).toMatch(/run it/)
+    const ask = voice.spoken.at(-1)
+    expect(ask).toMatch(/run it/)
     const confirm = panel.events.find((e) => e.type === "run" && e.phase === "confirm")
     controller.decideRun(confirm!.type === "run" ? confirm!.id : -1, true)
     await advance(10)
-    expect(voice.takenBack).toEqual([voice.spoken.at(-1)])
+    expect(voice.takenBack).toEqual([ask])
     expect(voice.stops).toBe(0)
   })
 

@@ -45,11 +45,13 @@ type Job = { text: string; done: () => void; heard: () => void; speedScale: numb
 type Early<T> = { text: string; speedScale: number; token?: Promise<T | undefined> }
 
 /** How a `say` is spoken across `spanMs`: its sentences, their pace, and the pause between them. */
-function fit(raw: string, spanMs: number): { sentences: string[]; speedScale: number; gap: number } {
+function fit(raw: string, spanMs: number, steady: boolean): { sentences: string[]; speedScale: number; gap: number } {
   const sentences = splitSentences(spokenText(raw))
   const total = sentences.reduce((sum, s) => sum + Math.max(1, s.split(/\s+/).filter(Boolean).length) * MS_PER_WORD, 0)
-  // Fit the span with pace first (a touch either way; more sounds wrong), then with pauses.
-  const speedScale = spanMs > 0 ? Math.min(1.3, Math.max(0.85, total / spanMs)) : 1
+  // Fit the span with pace first (a touch either way; more sounds wrong), then with pauses. A
+  // steady voice is never sped up or slowed down for a span — heard plainly in a natural voice —
+  // so its pauses alone do the spreading.
+  const speedScale = !steady && spanMs > 0 ? Math.min(1.3, Math.max(0.85, total / spanMs)) : 1
   const fitted = total / speedScale
   const extra = spanMs > fitted ? Math.min(spanMs, fitted * 1.6) - fitted : 0
   const gap = sentences.length > 1 ? Math.min(extra / (sentences.length - 1), MAX_GAP_MS) : 0
@@ -72,7 +74,11 @@ export class SpeechQueue<T> {
   /** One early sentence is being made: the next starts when it's done. */
   private makingEarly = false
 
-  constructor(private readonly backend: SpeechBackend<T>) {}
+  /** `steady`: this voice always speaks at its own pace, whatever span a `say` covers. */
+  constructor(
+    private readonly backend: SpeechBackend<T>,
+    private readonly steady = false,
+  ) {}
 
   /** How many sentences are waiting, unstarted. */
   get waiting(): number {
@@ -86,7 +92,7 @@ export class SpeechQueue<T> {
    * this say: its sentences still waiting are dropped, and the one sounding is cut off.
    */
   speak(raw: string, spanMs = 0, onStart?: () => void, signal?: AbortSignal): Promise<void> {
-    const { sentences, speedScale, gap } = fit(raw, spanMs)
+    const { sentences, speedScale, gap } = fit(raw, spanMs, this.steady)
     if (sentences.length === 0 || signal?.aborted) {
       onStart?.()
       return Promise.resolve()
@@ -130,7 +136,7 @@ export class SpeechQueue<T> {
    * ready when it is. Sentences are made in the order they were prepared, a few ahead at most.
    */
   prepare(raw: string, spanMs = 0): void {
-    const { sentences, speedScale } = fit(raw, spanMs)
+    const { sentences, speedScale } = fit(raw, spanMs, this.steady)
     for (const text of sentences) this.early.push({ text, speedScale })
     this.makeEarly()
   }

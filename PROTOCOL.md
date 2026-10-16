@@ -121,7 +121,8 @@ Rules:
 - **Blocking.** `step` enqueues its batch and blocks while `workAheadBatches`
   or more batches wait in front of it (not counting the one playing) — until
   enough have played, or an interrupting event occurs. An empty `step` blocks
-  until the queue is empty.
+  until the queue is empty, or a batch has finished with a `run`'s output or
+  a failure.
 - **Commands waiting for the programmer.** While a `run` waits for the
   programmer to allow it, any report says so (`confirming`), so an agent
   whose call timed out knows why nothing finished.
@@ -155,8 +156,11 @@ so every `move` is visible to them, or, right after a `point`, the pointed
 code.
 
 Playback pauses when the programmer presses Pause, navigates away, or starts
-typing a reply, until they resume. **Pausing is not an event**: the agent isn't told,
-its blocked call just waits longer (subject to `MAX_BLOCK`).
+typing a reply, until they resume. **Pausing is not an event**: reports carry
+`paused` while it lasts, so the agent knows its batches are held rather than
+lost. The programmer's own Pause answers a blocked `step` or `listen` at
+once with such a report, and resuming answers the next one the same way;
+other pauses (navigating away, typing a reply) only show in reports.
 
 ## Tools
 
@@ -171,7 +175,14 @@ Fails if a session is already active in that window, or if no editor window
 has the project open.
 
 Besides the report, the result includes the [agent guide](AGENT_GUIDE.md),
-which the agent follows for the whole session.
+which the agent follows for the whole session, and the session's mode page.
+
+Before a session, the programmer picks its **pairing mode** in the panel:
+`build` (get it done, shown as it goes) or `learn` (teach it: one small
+idea at a time), and for `learn`, who does the work (`drive`: the agent
+shows, the two share it, or the programmer drives). The mode is fixed for
+the session and told in the `start` report; its page rides with the guide
+and wins where the two differ.
 
 File paths given to and returned by all tools are relative to the agent's
 working directory (absolute paths work too).
@@ -195,7 +206,9 @@ piece of code. A batch that breaks this is rejected, like any batch that
 would fail, with `invalid_action` at the action that names a second file.
 
 An empty batch isn't a batch: `step([])` waits for the queued batches to
-finish, without waiting for the programmer, and reports them.
+finish, without waiting for the programmer, and reports them. A `run`'s
+output, or a failure, comes back as soon as its batch ends, without waiting
+for the batches queued behind it.
 
 ### `listen() -> Report`
 
@@ -204,7 +217,9 @@ Returns when:
 
 - all batches have finished and a programmer event arrives (message, turn
   change, …), or
-- a batch finishes with a status other than `completed`, or
+- a batch finishes with a status other than `completed`, or carrying a
+  `run`'s output — this is news the agent is usually waiting for, even
+  mid-`listen`, or
 - `MAX_BLOCK` elapses.
 
 `listen` is how the agent "ends its turn" without actually ending it.
@@ -360,6 +375,11 @@ commands can still run in the background with the agent's native tools.
 - **Result.** The batch's report shows each `run`: the exit code, the last
   ~12,000 characters of output as plain text, and the terminal's shell
   (`pwsh`, `zsh`, …) so the agent can write commands for it.
+- **Read out.** With the voice on, when a batch ends on a `run` and nothing
+  is queued behind it, the extension reads its result out at once, while the
+  agent reads the report: a short output whole, a long one's line count and
+  last line, a failure's last line. The words are in the report as `said`, so
+  the agent goes on from them instead of repeating them.
 - **Failure.** A nonzero exit fails the batch with `command_failed`, since the
   rest of the batch, and the next one, were planned assuming success. A `run`
   counts as played once its command has started, so its beat is never returned as
@@ -453,9 +473,11 @@ lines, not as JSON strings full of escapes. It says, in order:
    - the commands it ran, with their exit code and output,
    - for a failed batch, the error, with the lines where the text it looked
      for is,
-  - **what didn't play**, verbatim, one beat per line, ready to resubmit.
-     A beat cut short comes first, as `{ do: rest }` without its `say`, which
-     was already heard; a failed batch's failing beat comes first.
+
+- **what didn't play**, verbatim, one beat per line, ready to resubmit.
+  A beat cut short comes first, as `{ do: rest }` without its `say`, which
+  was already heard; a failed batch's failing beat comes first.
+
 3. **The batch this `step` submitted**, if it hasn't finished: playing or
    queued. Or, if it was rejected, the action of its beat that would fail, the error, and
    the code as it would read then. If the queue had run dry and the editor sat
@@ -529,9 +551,12 @@ type Report = {
   turn: "agent" | "user";
   cursor?: Code; // only when it isn't where the agent last saw it
   waiting?: true; // returned due to MAX_BLOCK
+  paused?: true; // playback is paused in the editor: batches are held until the programmer resumes
   stillMs?: number; // step only: the editor sat still this long, the queue dry, before this batch came
   confirming?: { id: number; command: string }; // a `run` waiting for the programmer to allow it
   voice?: "on" | "off"; // in the `start` report, and any report where it changed
+  mode?: "build" | "learn"; // the session's pairing mode; in the `start` report only
+  drive?: "show" | "together" | "try"; // with mode `learn`: who does the work
 };
 
 type BatchResult = {
@@ -548,6 +573,7 @@ type BatchResult = {
     truncated?: true;
     running?: true; // still running in its terminal
     shell?: string;
+    said?: string; // what the voice read out about it as it landed
   }[];
   unsaved?: { file: string; error: string }[]; // edited files that couldn't be saved
 };
