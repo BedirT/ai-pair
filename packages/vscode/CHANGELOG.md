@@ -145,7 +145,9 @@
 - **The voice follows the speed menu,** up to 2×. One control sets the pace
   of both typing and talking; slower than 1×, the voice keeps its natural
   pace. `aiPair.voice.rate` now fine-tunes on top, and works for Chatterbox
-  too.
+  too. Kokoro stays clear when fast: past 1.3× it no longer squeezes its
+  own sounds, which smeared words at 2×; the line is made at 1.3× and
+  sped up the rest of the way at the same pitch.
 - **Pairing keeps moving.** The agent now writes its next batches while you
   watch, up to 2 batches ahead, so the editor no longer sits still between
   batches while it thinks. Their speech is made ahead too, so each batch
