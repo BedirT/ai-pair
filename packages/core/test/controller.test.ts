@@ -1420,50 +1420,6 @@ describe("run", () => {
     ])
   })
 
-  it("reads a run's result out as it lands when nothing is planned after it, and tells the agent what it said", async () => {
-    const { editor, controller } = setup({}, { confirmCommands: false, workAheadBatches: 2 })
-    editor.commandScript["python a.py"] = { ms: 100, exitCode: 0, output: "5.0\n" }
-    const voice = new FakeVoice()
-    controller.setVoice(voice)
-    await controller.start()
-    await controller.step([{ do: [{ run: "python a.py" }] }])
-    const report = await until(controller.step([]))
-    expect(voice.spoken.at(-1)).toBe("It printed 5.0.")
-    expect(report.batches[0]!.runs![0]!.said).toBe("It printed 5.0.")
-
-    // The agent planned past it: what it queued says what comes next, not the editor.
-    await controller.step([{ do: [{ run: "python a.py" }] }])
-    await controller.step([{ say: "Next." }])
-    const ahead = await until(controller.step([]))
-    expect(ahead.batches[0]!.runs![0]!.said).toBeUndefined()
-    expect(voice.spoken.filter((w) => w.startsWith("It printed"))).toHaveLength(1)
-    await until(controller.end())
-  })
-
-  it("reads out what a person would read off the screen: a short output, a long one's end, a failure's last line", async () => {
-    const cases: Array<[{ exitCode: number; output: string }, string]> = [
-      [{ exitCode: 0, output: "" }, "It ran, with no output."],
-      [{ exitCode: 0, output: "a 2\nb 3\n" }, "It printed a 2, b 3."],
-      [{ exitCode: 0, output: "-1\n" }, "It printed -1."],
-      [{ exitCode: 0, output: "collected 3 items\n\n===== 3 passed in 0.12s =====\n" }, "It printed collected 3 items, 3 passed in 0.12s."],
-      [{ exitCode: 0, output: Array.from({ length: 40 }, (_, i) => `step ${i + 1}`).join("\n") }, "It printed 40 lines, ending with step 40."],
-      [{ exitCode: 0, output: "/Users/someone/projects/thing/build/output.bin\n" }, "It printed a long line."],
-      [{ exitCode: 1, output: 'Traceback (most recent call last):\n  File "a.py", line 3, in <module>\nNameError: name \'x\' is not defined\n' }, "It failed: NameError: name 'x' is not defined."],
-      [{ exitCode: 2, output: "x".repeat(300) }, "It failed, with exit code 2."],
-    ]
-    for (const [script, words] of cases) {
-      const { editor, controller } = setup({}, { confirmCommands: false })
-      editor.commandScript["go"] = { ms: 100, ...script }
-      const voice = new FakeVoice()
-      controller.setVoice(voice)
-      await controller.start()
-      await controller.step([{ do: [{ run: "go" }] }])
-      await until(controller.step([]))
-      expect(voice.spoken.at(-1)).toBe(words)
-      await until(controller.end())
-    }
-  })
-
   it("saves what the batch has typed before running a command, so the command reads it from disk", async () => {
     const { editor, controller } = setup({ "a.ts": "" }, { confirmCommands: false })
     await controller.start()
@@ -1642,9 +1598,8 @@ describe("run", () => {
     await controller.step([{ do: [{ run: "npm test" }] }])
     await until(controller.listen(), 5_000)
     const said = voice.spoken.length
-    expect(voice.spoken.at(-1)).toMatch(/^It ran/)
-    // The read-out fills the first seconds, and a quick answer needs no filler after it.
-    await advance(5_900)
+    // What the run printed is the agent's to talk about: the voice only fills a long think.
+    await advance(2_900)
     expect(voice.spoken.length).toBe(said)
     await advance(200)
     expect(voice.spoken.slice(said)).toHaveLength(1)
@@ -1670,7 +1625,7 @@ describe("run", () => {
     await controller.step([{ do: [{ run: "npm test" }] }])
     await until(controller.listen(), 5_000)
     voice.slowStart = true
-    await advance(6_100)
+    await advance(3_100)
     const filler = voice.spoken.at(-1)!
     await controller.step([{ say: "It passed." }])
     expect(voice.takenBack).toEqual([filler])
@@ -1934,6 +1889,27 @@ describe("stages", () => {
     await until(controller.step([{ do: [{ write: {} }] }]))
     await until(controller.step([]))
     expect(editor.text("a.py")).toBe("def add(a, b):\n    return a + b\n\n\ndef sub(a, b):\n    return a - b\n\n\nprint(add(2, 3))\nprint(sub(5, 3))\n")
+  })
+
+  it("returns from `listen` once the batches have played and the stage still has code to put in", async () => {
+    const { controller, copy } = setup({ "a.ts": "a\n" })
+    await controller.start()
+    copy().write("a.ts", "a\nb\n")
+    await controller.stage("B", "")
+    await controller.join()
+    // Only talk, sent with a `listen` in the same turn: the editor goes still while b is still to write.
+    await controller.step([{ say: "Next, b." }])
+    const listening = track(controller.listen())
+    await advance(2000)
+    expect(listening.done).toBe(true)
+    expect(listening.value!.batches).toMatchObject([{ status: "completed" }])
+    // The `listen` after waits for the programmer, say for the answer to a question.
+    const next = track(controller.listen())
+    await advance(5000)
+    expect(next.done).toBe(false)
+    controller.userMessage("go on")
+    await advance(10)
+    expect(next.done).toBe(true)
   })
 
   it("creates the files a stage adds and deletes the ones it removes", async () => {

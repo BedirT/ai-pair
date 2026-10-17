@@ -218,10 +218,8 @@ function renderRun(run: RunResult): string {
   const outcome =
     run.exit_code !== undefined ? `exited with ${run.exit_code}` : run.running ? "still running in its terminal" : "exit code unknown"
   const shell = run.shell ? ` in ${run.shell}` : ""
-  // Read out already: the agent's reply should build on these words, not say them again.
-  const said = run.said ? `\nThe programmer already heard the editor read this out: "${run.said}" Go on from it; don't say it again.` : ""
-  if (run.output === "") return `Ran \`${run.command}\`${shell}: ${outcome}, no output.${said}`
-  return `Ran \`${run.command}\`${shell}: ${outcome}. Output${run.truncated ? ", its end" : ""}:\n${fenced(run.output)}${said}`
+  if (run.output === "") return `Ran \`${run.command}\`${shell}: ${outcome}, no output.`
+  return `Ran \`${run.command}\`${shell}: ${outcome}. Output${run.truncated ? ", its end" : ""}:\n${fenced(run.output)}`
 }
 
 function renderExcerpt(x: Excerpt): string {

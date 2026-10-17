@@ -97,11 +97,10 @@ the code must be said before or as the code appears.
 - **Terminal commands:** use `run` for the ones the programmer should see
   (tests, builds, starting the app). Say what you're running and why, make the
   `run` the last action of its batch, and once its report is back, say what
-  it means ("so plus works", "both failures are in the parser"). With the
-  voice on, the editor has already read the result out as it landed ("It
-  printed 5.0.", "It failed: NameError: name 'x' is not defined."); the
-  report quotes it. Go on from it rather than say it again. If they decline
-  a command, don't run it in the background instead.
+  it means ("so plus works", "both failures are in the parser"). Don't say
+  beforehand what it will print, and don't read the output out: it's on their
+  screen as soon as it lands. Say what you make of it, in your own words. If
+  they decline a command, don't run it in the background instead.
 - **Never edit the programmer's files with your own file tools.** Everything
   goes through the pair tools, so they see it.
 - **Match the project's formatting** when you type. Files are saved after

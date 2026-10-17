@@ -296,6 +296,10 @@ Returns when:
   `run`'s output — this is news the agent is usually waiting for, even
   mid-`listen`, or
 - a new stage begins, or the author tells the presenter something, or
+- in the agent's turn, its batches have all played while the stage still has
+  code to put in: the editor stands still while the presenter has work. Only
+  as they finish; a `listen` called after that waits for the programmer, say
+  for the answer to a question, or
 - `MAX_BLOCK` elapses.
 
 `listen` is how the agent "ends its turn" without actually ending it.
@@ -690,7 +694,6 @@ type BatchResult = {
     truncated?: true;
     running?: true; // still running in its terminal
     shell?: string;
-    said?: string; // what the voice read out about it as it landed
   }[];
   unsaved?: { file: string; error: string }[]; // edited files that couldn't be saved
 };

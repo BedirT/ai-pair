@@ -64,22 +64,18 @@ Layout, top to bottom:
      it yet_ past a minute and a half), so a long think reads as work and a
      stuck agent as stuck; while it plays, how many batches are written and
      ready behind this one, and _writing more_ while the agent is at it.
-     With the voice on, a think after news isn't silent either. When a batch
-     ends on a run with nothing queued after it, the voice reads the result
-     off the screen at once, as a person at the desk would: a short output
-     whole (_It printed 5.0._), a long one by its length and last line, a
-     failure by its last line (_It failed: NameError: name 'x' is not
-     defined._). The agent's report quotes it, so its answer goes on from
-     it. Then, six seconds into the think after a run (three after something
-     the programmer said or did, five when the editor just ran out of written
-     batches), the voice makes the small sound a person would, fitted to it
+     With the voice on, a think after news isn't silent either. Three
+     seconds into the think after a run, or something the programmer said
+     or did (five when the editor just ran out of written batches), the
+     voice makes the small sound a person would, fitted to it
      (_Mm. Let me see._, _Let me look at why._, _One sec._), and once more
      fifteen seconds later if the think goes on (_Still working it out._).
-     The extension says all of these, not the agent, so they cost no model
-     time and work with any agent; they're facts and thinking noises, never
-     a guess at the answer. A quiet heartbeat isn't news, so thinking after
-     one stays silent. A filler not yet heard when the agent's own words
-     come is taken back.
+     The extension says these, not the agent, so they cost no model time
+     and work with any agent; they're thinking noises, never a guess at the
+     answer, and never what a run printed: that's on the screen, and what
+     to make of it is the agent's to say. A quiet heartbeat isn't news, so
+     thinking after one stays silent. A filler not yet heard when the
+     agent's own words come is taken back.
      After Interrupt the words are _Interrupted · it knows_ until the agent
      visibly acts on it or the programmer speaks: a quiet agent that heard
      must not read like one that didn't. While paused they say the work is

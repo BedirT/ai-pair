@@ -78,8 +78,8 @@ type News = "ran" | "failed" | "message" | "interrupted" | "drained"
 /**
  * Said by the voice, not the agent, when the agent goes quiet to think: a person at the desk
  * would make a sound, not sit in silence. Fitted to what it's answering, and short, so they never
- * hold back the agent's own words for long. A run's result was read out already, so after one
- * they're about thinking it over, not about looking. `long`: still thinking, a while later.
+ * hold back the agent's own words for long. They never say what a run printed: what to make of
+ * it is the agent's to say. `long`: still thinking, a while later.
  */
 const FILLERS: Record<News | "long", string[]> = {
   ran: ["Okay, let me think about that.", "Alright. One moment.", "Mm. Let me see."],
@@ -90,38 +90,13 @@ const FILLERS: Record<News | "long", string[]> = {
   long: ["Still working it out.", "Bear with me, almost there.", "Still thinking this one through."],
 }
 /**
- * How long the agent may think in silence before the voice fills it. After a run, its read-out
- * fills the first seconds; when the editor ran out of written batches, a beat is the agent's to take.
+ * How long the agent may think in silence before the voice fills it. When the editor ran out of
+ * written batches, a beat is the agent's to take.
  */
-const FILL_FIRST_MS: Record<News, number> = { ran: 6000, failed: 6000, message: 3000, interrupted: 3000, drained: STILL_NOTE_MS }
+const FILL_FIRST_MS: Record<News, number> = { ran: 3000, failed: 3000, message: 3000, interrupted: 3000, drained: STILL_NOTE_MS }
 /** And again after that, at most. */
 const FILL_AGAIN_MS = 15_000
 const MAX_FILLS = 2
-
-/** Longer than this, a line of output is read out by its length, not word by word. */
-const READ_OUT_CHARS = 100
-
-/**
- * A run's result in words, as a person reads it off the screen: a short output whole, a long one
- * by its length and last line (where a summary or the error is), a failure by its last line. Text a
- * voice can't say — paths, hashes, a wall of symbols — is counted, not read.
- */
-function readOut(run: RunResult): string {
-  // Banners like `==== 3 passed ====` are decoration: only the words between are said. A lone
-  // sign, as in `-1`, is the number's.
-  const lines = run.output
-    .split(/\r?\n/)
-    .map((line) => line.replace(/^\s*([=\-*#~_])\1{2,}|([=\-*#~_])\2{2,}\s*$/g, "").trim())
-    .filter((line) => line !== "")
-  const sayable = (text: string) => text.length <= READ_OUT_CHARS && !/\S{25,}/.test(text)
-  const end = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`)
-  const last = lines.at(-1)
-  if (run.exit_code !== 0) return last && sayable(last) ? `It failed: ${end(last)}` : `It failed, with exit code ${run.exit_code}.`
-  if (!last) return "It ran, with no output."
-  if (lines.length <= 3 && sayable(lines.join(", "))) return `It printed ${end(lines.join(", "))}`
-  const count = lines.length === 1 ? "a long line" : `${lines.length} lines`
-  return sayable(last) && lines.length > 1 ? `It printed ${count}, ending with ${end(last)}` : `It printed ${count}.`
-}
 
 type Batch = {
   id: number
@@ -200,6 +175,8 @@ type Session = {
   told: string[]
   /** The stage view as last reported, so it's only reported again when it changed. */
   shownStage?: string
+  /** The stage as last worked out for a report, with the queued batches played, still has code to put in. */
+  stageLeft: boolean
   /** Code of the stages set aside for the programmer's: as told already, and not yet told to the presenter. */
   asideTold: Set<string>
   aside: SetAside[]
@@ -339,6 +316,7 @@ export class Controller {
           briefs: [],
           briefed: 0,
           told: [],
+          stageLeft: false,
           asideTold: new Set(),
           aside: [],
           advancing: Promise.resolve(),
@@ -902,6 +880,11 @@ export class Controller {
         // So is a stage starting, or the author's words.
         if (s.briefs.length > 0 || s.told.length > 0) return true
         if (s.queue.length > 0) return false
+        // Its batches have all played, and the stage still has code to put in: the editor stands
+        // still while the presenter has work. Waiting on here, it would sit out the whole wait,
+        // say beside a `step` sent in the same turn whose report already told it a stage began.
+        // Only as its batches finish: the `listen` after waits for the programmer, say for an answer.
+        if (s.scene.turn === "agent" && s.stageLeft && s.finished.length > 0) return true
         if (s.scene.turn === "agent") return s.events.some(interrupting)
         // The programmer's edits during their turn wait until they pause typing.
         return s.events.some((e) => e.kind !== "edit") || (s.navigatorReady && s.events.some(interrupting))
@@ -960,6 +943,7 @@ export class Controller {
       if (s.briefs.length > 0) report.briefs = s.briefs.splice(0)
       if (s.told.length > 0) report.author = s.told.splice(0)
       const stage = await this.stageView(s)
+      s.stageLeft = (stage?.left.length ?? 0) > 0
       const key = stage && JSON.stringify(stage)
       if (stage && key !== s.shownStage) {
         report.stage = stage
@@ -1322,15 +1306,6 @@ export class Controller {
         if (result.status !== "completed") this.interrupt(s)
         // Mark the next batch as playing before reporting, so the report says so.
         this.startHead(s)
-        // A run with nothing planned after it: the agent reads its result now, and the programmer
-        // would sit in silence while it does. The voice reads it off the screen at once, as a
-        // person at the desk would, and the report says so. A run left running has no result yet.
-        const ran = result.runs?.at(-1)
-        const settled = result.status === "completed" || result.error?.kind === "command_failed"
-        if (ran && ran.exit_code !== undefined && settled && s.queue.length === 0 && s.scene.turn === "agent" && this.voice?.ready) {
-          ran.said = readOut(ran)
-          void this.voice.speak(ran.said)
-        }
         // Run dry with no call waiting: the agent is writing the next batch while the editor sits still.
         if (result.status === "completed" && s.queue.length === 0 && this.call === null && s.scene.turn === "agent") {
           s.stillSince = Date.now()

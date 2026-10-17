@@ -182,8 +182,6 @@ export type RunResult = {
   running?: true
   /** The terminal's shell, e.g. `pwsh` or `zsh`, when it's known. */
   shell?: string
-  /** What the voice read out about it as it landed, so the agent goes on from it instead of repeating it. */
-  said?: string
 }
 
 /**
