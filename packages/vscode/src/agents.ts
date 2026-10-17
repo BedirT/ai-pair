@@ -47,7 +47,8 @@ export const AGENTS: Agent[] = [
       if (Array.isArray(data?.disabledServers) && data.disabledServers.includes(SERVER)) return false
       if (entry.enabled === false && !(Array.isArray(data?.enabledServers) && data.enabledServers.includes(SERVER))) return false
       // Pair calls block while the programmer watches and replies, far past OMP's 30s MCP default.
-      return entry.timeout === 0
+      if (entry.timeout !== 0) return false
+      return readText(ompPresenterFile(host)) === OMP_PRESENTER
     },
     async setUp(host, command) {
       const file = ompFile(host)
@@ -59,6 +60,8 @@ export const AGENTS: Agent[] = [
       if (Array.isArray(data?.disabledServers) && data.disabledServers.includes(SERVER)) {
         editJson(file, ["disabledServers"], data.disabledServers.filter((name: unknown) => name !== SERVER))
       }
+      // The setup owns this agent file, so a newer version replaces the old one.
+      write(ompPresenterFile(host), OMP_PRESENTER)
       return file
     },
   },
@@ -172,6 +175,24 @@ export function ompFile(host: Host): string {
       ? path.join(host.home, ".omp", "profiles", profile, "agent")
       : path.join(host.home, ".omp", "agent")
   return path.join(dir, "mcp.json")
+}
+
+/**
+ * OMP's presenter agent, which the author guide asks the author to start. It names no model, so it
+ * runs on the author's own: a weaker one played the stages badly. Thinking is off, so it's quick.
+ */
+const OMP_PRESENTER = `---
+name: pair-presenter
+description: Presents an AI Pair session in the programmer's editor, playing the author's stages. The author starts it right after the pair server's start.
+thinkingLevel: off
+---
+
+You present a live AI Pair pairing session in the programmer's editor. Call the join tool of the pair server, then follow the presenter guide it returns until the session ends. Never end your turn before it does.
+`
+
+/** Where OMP finds the presenter agent: the agents folder beside its MCP configuration. */
+function ompPresenterFile(host: Host): string {
+  return path.join(path.dirname(ompFile(host)), "agents", "pair-presenter.md")
 }
 
 /** The `omp` program: on the PATH, or where its installers put it off the PATH. */

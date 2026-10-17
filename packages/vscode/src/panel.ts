@@ -79,8 +79,8 @@ type FromPanel =
 
 const MAX_LOG = 400
 
-/** The commands the panel may run: the ones its intro links to. */
-const PANEL_COMMANDS: ReadonlySet<string> = new Set(["aiPair.playDemo", "aiPair.setUpAgent"])
+/** The commands the panel may run: the ones its intro links to, and the prepared-compare offer. */
+const PANEL_COMMANDS: ReadonlySet<string> = new Set(["aiPair.playDemo", "aiPair.setUpAgent", "aiPair.comparePrepared"])
 
 export class NarrationPanel implements PanelPort, KeysPort, vscode.WebviewViewProvider {
   static readonly viewId = "aiPair.narration"

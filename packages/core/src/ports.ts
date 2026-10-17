@@ -61,6 +61,8 @@ export interface EditorPort {
   show(file: string): Promise<void>
   edit(file: string, offset: number, deleteLength: number, text: string, options: EditOptions): Promise<void>
   save(file: string): Promise<void>
+  /** Deletes the file, closing it in the editor: a stage that removes it, once its lines are out. */
+  deleteFile(file: string): Promise<void>
   renderCursor(cursor: CursorView | null, state: AgentState, focus: Focus): void
   renderPoint(point: { file: string; start: number; end: number } | null): void
   /** Brings the programmer's view back to what it follows. */
@@ -100,6 +102,10 @@ export type PanelEvent =
       /** With `confirm`: the program the command runs, which the programmer can allow for the session. */
       program?: string
     }
+  /** A stage of the author's starts playing: the panel marks where. */
+  | { type: "stage"; number: number; title: string }
+  /** The session ended with stages played: the prepared version can be compared with the code. */
+  | { type: "compare" }
 
 export interface PanelPort {
   post(event: PanelEvent): void

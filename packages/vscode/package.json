@@ -132,6 +132,11 @@
         "command": "aiPair.askAboutSelection",
         "title": "Ask the Agent About the Selection",
         "category": "AI Pair"
+      },
+      {
+        "command": "aiPair.comparePrepared",
+        "title": "Compare with Prepared",
+        "category": "AI Pair"
       }
     ],
     "menus": {

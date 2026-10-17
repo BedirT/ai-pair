@@ -1,14 +1,15 @@
 // Playing batches: what each action does, at a human pace. The same code plays a batch in the
 // programmer's editor and, to check it before it's queued, in memory (see rehearsal.ts).
 
-import type { Action, BatchResult, Beat, Candidate, Code, ErrorKind, RunResult, SpanTarget, Turn } from "@ai-pair/protocol"
+import type { Action, BatchResult, Beat, Candidate, Code, ErrorKind, PlanTarget, RunResult, SpanTarget, Turn } from "@ai-pair/protocol"
 import * as nodePath from "node:path"
-import { actionKinds, CURSOR_MARKER, moveProblem, spanProblem, typeProblem } from "@ai-pair/protocol"
+import { actionKinds, CURSOR_MARKER, moveProblem, planProblem, spanProblem, typeProblem } from "@ai-pair/protocol"
 import { resolveSpan, resolveSpot, spanCandidates, spotCandidates, type Resolution } from "./places"
 import type { Config } from "./controller"
 import type { LineIds, Sighting } from "./lines"
-import type { Change, EditorPort, Focus, KeysPort, PanelPort, VoicePort } from "./ports"
-import { fileLines, isLineStart, lineEnd, lineText, position } from "./text"
+import { similar, type FileView, type Item, type StagePlan } from "./plan"
+import type { Change, EditOptions, EditorPort, Focus, KeysPort, PanelPort, VoicePort } from "./ports"
+import { fileLines, isLineStart, lineEnd, lineStart, lineText, position } from "./text"
 import type { Pacing } from "./timeline"
 import type { Timing } from "./timing"
 import { planTyping, readingTime, wordCount } from "./typing"
@@ -64,6 +65,13 @@ export type Stage = {
    * identity. Given, a `move` only goes to a line the agent knows the number of.
    */
   knows?(file: string, line: number, id: number): boolean
+  /** The stage being played, and what's left of it: what `write` and `drop` work on. */
+  plan?(): StagePlan | undefined
+  /**
+   * Told of an edit of the agent's own, by `type` or `delete`, not a stage's code by `write`: the
+   * author hears of it. Only the editor's stage is told; rehearsals aren't.
+   */
+  offPlan?(file: string, before: string, after: string): void
 }
 
 type Range = { file: string; start: number; end: number }
@@ -98,6 +106,16 @@ const MAX_CODE_LINES = 40
 const CONTEXT_LINES = 3
 
 const ok: Outcome = { kind: "ok" }
+
+/**
+ * What each `write` typed, by its action, once played in memory, as every batch is before it's
+ * queued: so the words over it can be timed to it when it plays. Weak: it goes with the batch.
+ */
+const written = new WeakMap<object, string>()
+
+function pendingItem(item: Item): item is Item & { kind: "write" | "remove" } {
+  return item.kind === "write" || item.kind === "remove"
+}
 
 /** Shared by all players, so the panel never sees two commands with one id. */
 let nextRunId = 1
@@ -165,6 +183,12 @@ export function coverage(actions: Action[], timing: Timing): number {
     else if ("select" in action) ms += timing.beforeSelectMs + timing.afterSelectMs
     else if ("delete" in action) ms += timing.afterDeleteMs
     else if ("point" in action) ms += timing.afterPointMs
+    else if ("write" in action) {
+      const text = typeof action.write === "object" ? written.get(action.write) : undefined
+      const scale = action.write?.fast ? timing.fastFactor : 1
+      if (text) for (const chunk of planTyping(text, timing.type, false, () => 0.5, scale)) ms += chunk.delay
+      ms += timing.beforeMoveMs + timing.afterMoveNearMs
+    }
   }
   return ms
 }
@@ -190,6 +214,8 @@ export class Player {
   reading = false
   /** A `run` whose command is executing. */
   commandRunning = false
+  /** While `write` types: the lines it has made, which it may take back out. */
+  private writing?: Set<number>
   private playing?: Playing
 
   constructor(
@@ -428,6 +454,8 @@ export class Player {
     if (kinds.length > 1) {
       return fail("invalid_action", `One action per object, got ${kinds.map((k) => `\`${k}\``).join(" and ")}: make them separate actions, in order.`)
     }
+    // Only the plan changes, not the code: instant, and the programmer's turn allows it.
+    if ("drop" in action) return this.drop(action.drop)
     const named = this.names(action, playing)
     if (typeof named === "object") return named
     if (s.turn === "user" && !("point" in action)) {
@@ -506,26 +534,12 @@ export class Player {
       const problem = typeProblem(text)
       if (problem) return fail("invalid_action", problem)
       const [before, after] = (text as string).split(CURSOR_MARKER) as [string, string]
-      return this.type(before, after, fast, playing)
+      return this.ownEdit(() => this.type(before, after, fast, playing))
     }
 
-    if ("delete" in action) {
-      if (!s.cursor || !s.selection) return fail("no_selection", "Nothing is selected; `select` first.")
-      const { file } = s.cursor
-      const { start, end } = s.selection
-      playing.edited = true
-      await editor.show(file)
-      this.stage.lines.of(file, await editor.getText(file))
-      this.clearPoint()
-      s.cursor.offset = start
-      s.selection = null
-      this.touch(playing, file, start, end - start, 0)
-      await this.edit(file, { offset: start, deleteLength: end - start, text: "" }, { undoStopBefore: true, undoStopAfter: true })
-      this.stage.keys?.()?.press("\b")
-      this.follow()
-      await this.delay(timing.afterDeleteMs)
-      return ok
-    }
+    if ("delete" in action) return this.ownEdit(() => this.deleteSelection(playing))
+
+    if ("write" in action) return this.write(action.write, playing)
 
     if ("point" in action) {
       const target = action.point
@@ -690,10 +704,319 @@ export class Player {
     return ok
   }
 
-  /** Edits a file, which its lines' identities follow. */
-  private edit(file: string, change: Change, options: { undoStopBefore: boolean; undoStopAfter: boolean }): Promise<void> {
-    this.stage.lines.apply(file, change)
+  /**
+   * Edits a file, which its lines' identities follow, and the stage's plan with them: a line of the
+   * plan an edit of the agent's gives a new identity, as deleting the lines around an empty line
+   * can, is still the plan's. While `write` types, the lines it makes are its own.
+   */
+  private edit(file: string, change: Change, options: EditOptions): Promise<void> {
+    const { lines } = this.stage
+    const plan = this.stage.plan?.()
+    const before = plan?.has(file) ? lines.known(file) : undefined
+    const held = before && plan!.held(file, before.ids)
+    lines.apply(file, change)
+    const after = lines.known(file)
+    if (held && after) {
+      plan!.rebind(file, held, after.text, after.ids)
+      if (this.writing) {
+        const old = new Set(before.ids)
+        const made = after.ids.filter((id) => !old.has(id))
+        plan!.made(file, made)
+        for (const id of made) this.writing.add(id)
+      }
+    }
     return this.stage.editor.edit(file, change.offset, change.deleteLength, change.text, options)
+  }
+
+  /** An edit of the agent's own, not a stage's code: the stage is told of it, for the author to hear. */
+  private async ownEdit(edit: () => Promise<Outcome>): Promise<Outcome> {
+    const file = this.scene.cursor?.file
+    if (!this.stage.offPlan || !file) return edit()
+    const before = await this.stage.editor.getText(file)
+    const outcome = await edit()
+    const after = await this.stage.editor.getText(file)
+    if (after !== before) this.stage.offPlan(file, before, after)
+    return outcome
+  }
+
+  /** Deletes the selection, as `delete` does. */
+  private async deleteSelection(playing: Playing): Promise<Outcome> {
+    const s = this.scene
+    const { editor } = this.stage
+    if (!s.cursor || !s.selection) return fail("no_selection", "Nothing is selected; `select` first.")
+    const { file } = s.cursor
+    const { start, end } = s.selection
+    playing.edited = true
+    await editor.show(file)
+    this.stage.lines.of(file, await editor.getText(file))
+    this.clearPoint()
+    s.cursor.offset = start
+    s.selection = null
+    this.touch(playing, file, start, end - start, 0)
+    await this.edit(file, { offset: start, deleteLength: end - start, text: "" }, { undoStopBefore: true, undoStopAfter: true })
+    this.stage.keys?.()?.press("\b")
+    this.follow()
+    await this.delay(this.stage.config().timing.afterDeleteMs)
+    return ok
+  }
+
+  /**
+   * Puts the cursor at `end` in `file`, selecting from `start` when that's before it, with the
+   * pauses of a `move` or `select`. Already there, nothing happens. False when interrupted.
+   */
+  private async goTo(file: string, start: number, end: number, playing: Playing): Promise<boolean> {
+    const s = this.scene
+    const { editor } = this.stage
+    const { timing } = this.stage.config()
+    const select = end > start
+    if (!select && !s.selection && s.cursor?.file === file && s.cursor.offset === end) return true
+    if (!(await this.delay(select ? timing.beforeSelectMs : timing.beforeMoveMs))) return false
+    await editor.show(file)
+    const text = await editor.getText(file)
+    const near = s.cursor?.file === file && Math.abs(position(text, s.cursor.offset).line - position(text, end).line) <= timing.nearLines
+    s.cursor = { file, offset: end }
+    s.selection = select ? { start, end } : null
+    playing.moved = true
+    this.follow()
+    return this.delay(select ? timing.afterSelectMs : near ? timing.afterMoveNearMs : timing.afterMoveFarMs)
+  }
+
+  /**
+   * Writes lines of the current stage, as the programmer would: a line due to go that reads like
+   * the line replacing it is edited where they differ, the other lines due to go are deleted, and
+   * the lines still missing are typed in their place. One step at a time, each worked out afresh
+   * from the file as it reads, so whatever an interruption leaves is picked up again by the rest.
+   */
+  private async write(target: PlanTarget & { fast?: boolean }, playing: Playing): Promise<Outcome> {
+    const picked = await this.pick(target, false, playing)
+    if ("kind" in picked) return picked
+    const { plan, file } = picked
+    const fast = target.fast === true
+    const writes = new Set(picked.items.flatMap((i) => (i.kind === "write" ? [i.index] : [])))
+    // The lines to take out, and those this `write` makes: one it leaves half typed goes too.
+    const removes = new Set(picked.items.flatMap((i) => (i.kind === "remove" ? [i.id] : [])))
+    const chosen = (i: Item): i is Item & { kind: "write" | "remove" } =>
+      (i.kind === "write" && writes.has(i.index)) || (i.kind === "remove" && removes.has(i.id))
+    let typed = ""
+    let progressed = false
+    const stop = async (outcome: Outcome): Promise<Outcome> => {
+      if (outcome.kind !== "interrupted") return outcome
+      if (!progressed) return { kind: "interrupted" }
+      const { view } = await this.fileView(plan, file)
+      const left = view.items.filter(chosen)
+      if (left.length === 0) return { kind: "interrupted", consumed: true }
+      // Picked up by its text again: from the first line left, or the first one with text to find
+      // it by, when it's the first left in the file.
+      const first = view.items.find(pendingItem) === left[0]
+      const by = left.find((i) => i.text.trim() !== "")
+      const rest: PlanTarget & { fast?: boolean } = { file: this.displayPath(file) }
+      if (!first && by) rest.from = by.text
+      if (target.through !== undefined) rest.through = target.through
+      if (fast) rest.fast = true
+      return { kind: "interrupted", rest: { write: rest } }
+    }
+
+    this.writing = removes
+    try {
+      for (;;) {
+        const { text, view } = await this.fileView(plan, file)
+        const from = view.items.findIndex(chosen)
+        if (from === -1) break
+        let to = from
+        while (to + 1 < view.items.length && chosen(view.items[to + 1]!)) to++
+        const stretch = view.items.slice(from, to + 1)
+        const out = stretch.filter((i) => i.kind === "remove")
+        const missing = stretch.filter((i) => i.kind === "write")
+        const r = out[0]
+        const w = missing[0]
+        let outcome: Outcome
+        if (r && w && (r.text === w.text || similar(r.text, w.text))) {
+          // Edited in place: only where the two differ is selected and retyped.
+          plan.made(file, [r.id])
+          let p = 0
+          while (p < r.text.length && p < w.text.length && r.text[p] === w.text[p]) p++
+          let q = 0
+          while (q < r.text.length - p && q < w.text.length - p && r.text.at(-1 - q) === w.text.at(-1 - q)) q++
+          const base = lineStart(text, r.line)
+          const middle = w.text.slice(p, w.text.length - q)
+          if (r.text !== w.text) {
+            if (!(await this.goTo(file, base + p, base + r.text.length - q, playing))) return await stop({ kind: "interrupted" })
+            outcome = middle === "" ? await this.deleteSelection(playing) : await this.type(middle, "", fast, playing)
+            progressed = true
+            if (outcome.kind !== "ok") return await stop(outcome)
+            typed += middle
+          }
+          plan.edited(file, w.index, r.id)
+          continue
+        }
+        if (r) {
+          // The lines due to go are next to each other: one selection of whole lines takes them out.
+          const first = r.line
+          const last = out.at(-1)!.line
+          const count = view.lines.length
+          const end = last < count ? lineStart(text, last + 1) : text.length
+          const start = last < count || first === 1 || text.endsWith("\n") ? lineStart(text, first) : lineEnd(text, first - 1)
+          if (!(await this.goTo(file, start, end, playing))) return await stop({ kind: "interrupted" })
+          outcome = await this.deleteSelection(playing)
+          progressed = true
+          if (outcome.kind !== "ok") return await stop(outcome)
+          continue
+        }
+        // Typed after the nearest line of the file before them, or above the first line of the file.
+        const block = missing.map((i) => i.text).join("\n")
+        const before = view.items.slice(0, from).findLast((i) => i.kind !== "write")
+        const ids = this.stage.lines.of(file, text)
+        if (before) {
+          const at = lineEnd(text, before.line)
+          if (!(await this.goTo(file, at, at, playing))) return await stop({ kind: "interrupted" })
+          outcome = await this.type(`\n${block}`, "", fast, playing)
+        } else if (view.lines.length === 0) {
+          // Into the empty file's one line, which is the write's own from now on.
+          plan.made(file, [ids[0]!])
+          removes.add(ids[0]!)
+          if (!(await this.goTo(file, 0, 0, playing))) return await stop({ kind: "interrupted" })
+          outcome = await this.type(block, "", fast, playing)
+        } else {
+          // A line opened above the first, then filled.
+          if (!(await this.goTo(file, 0, 0, playing))) return await stop({ kind: "interrupted" })
+          outcome = await this.type("", "\n", fast, playing)
+          progressed = true
+          if (outcome.kind !== "ok") return await stop(outcome)
+          // An empty first line keeps its identity when a line opens above it: the new line is the
+          // one after. The plan's line goes with it, and the first, to be filled, is the write's.
+          const now = this.stage.lines.known(file)?.ids ?? []
+          if (now[0] === ids[0]) {
+            const kept = view.items.find((i) => i.kind === "line" && i.line === 1)
+            if (kept?.kind === "line" && now[1] !== undefined) plan.edited(file, kept.index, now[1])
+            plan.made(file, [ids[0]!])
+            removes.add(ids[0]!)
+          }
+          outcome = await this.type(block, "", fast, playing)
+        }
+        progressed = true
+        if (outcome.kind !== "ok") return await stop(outcome)
+        typed += block
+      }
+    } finally {
+      this.writing = undefined
+    }
+    written.set(target, typed)
+    await this.finish(plan, file, playing)
+    return ok
+  }
+
+  /**
+   * Once a file of the stage has nothing left to write or take out: its final newline is set as
+   * the stage has it, quietly, and a file the stage deletes is deleted.
+   */
+  private async finish(plan: StagePlan, file: string, playing: Playing): Promise<void> {
+    const s = this.scene
+    const { text, view } = await this.fileView(plan, file)
+    if (view.pending > 0) return
+    if (view.newline) {
+      const eol = await this.stage.editor.eol(file)
+      this.stage.lines.of(file, text)
+      const change = text.endsWith("\n")
+        ? { offset: text.length - (text.endsWith("\r\n") ? 2 : 1), deleteLength: text.endsWith("\r\n") ? 2 : 1, text: "" }
+        : { offset: text.length, deleteLength: 0, text: eol }
+      this.touch(playing, file, change.offset, change.deleteLength, change.text.length)
+      await this.edit(file, change, { undoStopBefore: false, undoStopAfter: true })
+    }
+    if (view.remove) {
+      await this.stage.editor.deleteFile(file)
+      playing.touched.delete(file)
+      if (playing.span?.file === file) playing.span = undefined
+      if (s.cursor?.file === file) {
+        s.cursor = null
+        s.selection = null
+      }
+      if (s.point?.file === file) this.clearPoint()
+    }
+  }
+
+  /** Takes lines out of the current stage: lines to write aren't written, lines due to go stay. */
+  private async drop(target: PlanTarget): Promise<Outcome> {
+    const picked = await this.pick(target, true)
+    if ("kind" in picked) return picked
+    picked.plan.drop(picked.file, picked.items)
+    return ok
+  }
+
+  /**
+   * The lines of the current stage a `write` or `drop` is about, left to write or take out, in a
+   * file: from the first that contains `from` through the first after it that contains `through`.
+   * `playing`: a `write`'s batch, which works in the file it picks.
+   */
+  private async pick(target: PlanTarget, drop: boolean, playing?: Playing): Promise<{ plan: StagePlan; file: string; items: Item[] } | Outcome> {
+    const problem = planProblem(target, drop)
+    if (problem) return fail("invalid_action", problem)
+    const plan = this.stage.plan?.()
+    const stage = plan?.current
+    if (!plan || !stage) return fail("invalid_action", "No stage is playing: the author hasn't recorded one yet. `listen` until it has.")
+    let file: string
+    if (target.file !== undefined) {
+      file = this.resolvePath(target.file)
+      if (!plan.has(file)) {
+        const files = plan.paths.map((p) => this.displayPath(p)).join(", ")
+        return fail("not_found", `Stage ${stage.number} doesn't change ${this.displayPath(file)}${files ? `; it changes ${files}` : ""}.`)
+      }
+    } else {
+      const views = await plan.left(this.read, this.stage.lines)
+      const cursor = this.scene.cursor?.file
+      const view = views.find((v) => v.file === cursor && v.pending > 0) ?? views.find((v) => v.pending > 0) ?? views[0]
+      if (!view) return fail("not_found", `Stage ${stage.number} has nothing left to write.`)
+      file = view.file
+    }
+    if (playing) {
+      const claimed = this.claim(file, playing)
+      if (typeof claimed === "object") return claimed
+    }
+    const { view } = await this.fileView(plan, file)
+    const items = view.items
+    const where = this.displayPath(file)
+    if (!items.some(pendingItem)) {
+      if (drop || (!view.newline && !view.remove)) return fail("not_found", `Stage ${stage.number} has nothing left to write in ${where}.`)
+      return { plan, file, items: [] }
+    }
+    const find = (text: string, from: number) => items.findIndex((i, n) => n >= from && pendingItem(i) && i.text.includes(text))
+    const missing = (field: string, text: string) => {
+      const left = items.filter(pendingItem).slice(0, 8)
+      const list = left.map((i) => `${i.kind === "write" ? "+" : "-"} ${JSON.stringify(i.text)}`).join(", ")
+      return fail("not_found", `No line left of stage ${stage.number} in ${where} contains \`${field}\` ${JSON.stringify(text)}. Left: ${list}.`)
+    }
+    const start = target.from === undefined ? items.findIndex(pendingItem) : find(target.from, 0)
+    if (start === -1) return missing("from", target.from!)
+    let end = start
+    if (target.through !== undefined) {
+      end = find(target.through, start)
+      if (end === -1) return missing("through", target.through)
+      // Blank lines that end the stretch go with the lines above them: left on their own, the next
+      // `{}` would take only them, its words playing over empty lines.
+      let tail = end
+      for (let next = items[tail + 1]; next && pendingItem(next) && next.text.trim() === ""; next = items[tail + 1]) tail++
+      const after = items[tail + 1]
+      if (!after || !pendingItem(after)) end = tail
+    } else {
+      while (end + 1 < items.length && pendingItem(items[end + 1]!)) end++
+    }
+    return { plan, file, items: items.slice(start, end + 1).filter(pendingItem) }
+  }
+
+  /** The stage's file as it reads in the editor: one that doesn't exist reads as empty. */
+  private async fileView(plan: StagePlan, file: string): Promise<{ text: string; view: FileView }> {
+    const read = await this.read(file)
+    const text = read ?? ""
+    const view = plan.view(file, text, read === undefined ? [] : this.stage.lines.of(file, text), read !== undefined)!
+    return { text, view }
+  }
+
+  /** A file's text, or nothing when it doesn't exist. */
+  private readonly read = async (file: string): Promise<string | undefined> => {
+    try {
+      return await this.stage.editor.getText(file)
+    } catch {
+      return undefined
+    }
   }
 
   /** The file an action names, or the cursor's. */
@@ -701,15 +1024,17 @@ export class Player {
     return target.file !== undefined ? this.resolvePath(target.file) : this.scene.cursor?.file
   }
 
-  /**
-   * The file an action names, if any, checked against the rest of its batch: a batch works in one
-   * file, which it names before its first edit.
-   */
+  /** The file an action names, if any, checked against the rest of its batch. */
   private names(action: Action, playing: Playing): string | undefined | Outcome {
-    const target: unknown = "move" in action ? action.move : "select" in action ? action.select : "point" in action ? action.point : undefined
+    const target: unknown =
+      "move" in action ? action.move : "select" in action ? action.select : "point" in action ? action.point : "write" in action ? action.write : undefined
     const file = typeof target === "object" && target !== null && "file" in target ? target.file : undefined
     if (typeof file !== "string") return undefined
-    const path = this.resolvePath(file)
+    return this.claim(this.resolvePath(file), playing)
+  }
+
+  /** A batch works in one file, which it names before its first edit. */
+  private claim(path: string, playing: Playing): string | Outcome {
     if (playing.named !== undefined && path !== playing.named) {
       return fail(
         "invalid_action",
@@ -719,7 +1044,7 @@ export class Player {
     if (playing.named === undefined && playing.edited) {
       return fail(
         "invalid_action",
-        "A batch works in one file: name it (in `move`, `select` or `point`) before the batch's first edit. Start a new batch where it switches files.",
+        "A batch works in one file: name it (in `move`, `select`, `point` or `write`) before the batch's first edit. Start a new batch where it switches files.",
       )
     }
     playing.named = path

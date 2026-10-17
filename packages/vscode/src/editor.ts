@@ -107,6 +107,8 @@ export class VsCodeEditor implements EditorPort, vscode.Disposable {
   /** Where our latest edit ended, and when it landed: what another extension's reaction would touch. */
   private lastOwn?: { file: string; end: number; at: number }
   private readonly reactions = new Map<string, Reaction[]>()
+  /** Each workspace folder's real path, for agents' paths that come as real paths. */
+  private readonly realFolders = new Map<string, string>()
   /** Our edits, one at a time: an undone reaction must never land between an edit and its offsets. */
   private editing: Promise<unknown> = Promise.resolve()
   /** Files we're saving: changes to them meanwhile are by save participants, like format on save. */
@@ -195,8 +197,26 @@ export class VsCodeEditor implements EditorPort, vscode.Disposable {
     for (const folder of vscode.workspace.workspaceFolders ?? []) {
       const inside = withinFolder(folder.uri.fsPath, resolved)
       if (inside) return inside
+      // An agent's working directory is a real path, while VS Code keeps a folder opened through a
+      // symlink (macOS's /var is /private/var) as opened: its own spelling would be another document.
+      const real = this.realFolder(folder.uri.fsPath)
+      const viaReal = withinFolder(real, resolved)
+      if (viaReal) return folder.uri.fsPath + viaReal.slice(real.length)
     }
     return resolved
+  }
+
+  private realFolder(folder: string): string {
+    let real = this.realFolders.get(folder)
+    if (real === undefined) {
+      try {
+        real = fs.realpathSync(folder)
+      } catch {
+        real = folder
+      }
+      this.realFolders.set(folder, real)
+    }
+    return real
   }
 
   displayPath(file: string): string {
@@ -300,6 +320,29 @@ export class VsCodeEditor implements EditorPort, vscode.Disposable {
     } finally {
       this.saving.delete(file)
     }
+  }
+  /**
+   * Deletes the file, closing its tabs: the deletion is ours, not the programmer's, so what was
+   * known of the file is forgotten first, the way an own edit is matched rather than reported.
+   * Closing needs no such guard: it fires no text change, only closes, which already forgets.
+   */
+  deleteFile(file: string): Promise<void> {
+    return this.serially(async () => {
+      this.own.delete(file)
+      this.reactions.delete(file)
+      if (this.lastOwn?.file === file) this.lastOwn = undefined
+      this.mirror.delete(file)
+      const edit = new vscode.WorkspaceEdit()
+      edit.deleteFile(vscode.Uri.file(file), { ignoreIfNotExists: true })
+      await vscode.workspace.applyEdit(edit)
+      const tabs: vscode.Tab[] = []
+      for (const group of vscode.window.tabGroups.all) {
+        for (const tab of group.tabs) {
+          if (tab.input instanceof vscode.TabInputText && tab.input.uri.fsPath === file) tabs.push(tab)
+        }
+      }
+      if (tabs.length > 0) await vscode.window.tabGroups.close(tabs)
+    })
   }
 
   renderCursor(cursor: CursorView | null, state: AgentState, focus: Focus): void {

@@ -5,7 +5,15 @@ during a pair programming session. The agent talks to the extension over MCP;
 the extension renders the agent's actions (a second cursor, typing, a narration
 panel) and reports back what happened, including everything the programmer did.
 
-This document covers only what the agent can do and observe. How the extension
+A session has two agents, which the programmer meets as one partner. The
+**author** does the work, out of sight, in a private copy of the project, and
+records it in [stages](#stages). The **presenter** plays each stage in the
+programmer's editor at a human pace, explaining it, and answers the
+programmer. Usually the presenter is a subagent the author starts on its own
+model with thinking off; an agent without subagents does both itself, recording all its stages
+first. Most of this document is about the presenter's side, the playing.
+
+This document covers only what the agents can do and observe. How the extension
 presents it to the programmer is in [DESIGN.md](DESIGN.md), and how the tool is
 built and connected is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
@@ -29,11 +37,15 @@ by feel.
 2. **The programmer always preempts the agent.** Anything the programmer does
    takes effect immediately on their side. The agent learns about it on its
    next call.
-3. **Events are delivered exactly once**, in the reports of `step` and `listen`.
+3. **Events are delivered exactly once**, in the reports of `step` and
+   `listen` to the presenter, and of the author's tools to the author.
 4. **No stale plans.** A batch never plays if it was planned without knowledge
    of an interrupting event.
-5. **During a session, the agent never ends its turn.** When it has nothing to
-   do, it calls `listen` and waits for the programmer.
+5. **During a session, neither agent ends its turn.** With nothing to do, the
+   presenter calls `listen` and waits for the programmer, and the author
+   calls `wait`.
+6. **The programmer's edits stand.** Their code is theirs: the agents build on
+   it, and never undo it as drift from their plan.
 
 ## Concepts
 
@@ -63,6 +75,10 @@ conversation can contain many sessions, one after another: the programmer
 works with the agent as usual, pairs for a while, ends the session, and may
 pair again later. Outside a session, all tools except `start` fail with
 `no_session`.
+
+**Stage.** One step of the author's work, as the author recorded it from its
+copy: what changed since the stage before, with notes for the presenter. The
+presenter plays the stages in order; see [Stages](#stages).
 
 ## Timing model
 
@@ -164,25 +180,43 @@ other pauses (navigating away, typing a reply) only show in reports.
 
 ## Tools
 
-### `start(task?: string, cwd?: string) -> Report`
+The author's tools are `start`, `stage`, `wait` and `tell_presenter`; the
+presenter's are `join`, `step`, `listen`, `read` and `tell_author`; both have
+`end`. The author's calls come over the connection that called `start`; any
+other connection that calls `join` is a presenter. A connection that has done
+neither gets `no_session`, and a presenter calling an author's tool gets
+`invalid_arguments`. An agent without subagents calls `join` itself, after
+recording its stages, and has all of them.
 
-Starts a session in the editor window for the current project. `task` is a
-short description shown in the narration panel. `cwd` is the agent's working
-directory, absolute: the agent should always give it, since not every harness
-starts the MCP server there. Without it, or if no editor window has it open,
-the harness's MCP roots and then the server's own working directory are tried.
-Fails if a session is already active in that window, or if no editor window
-has the project open.
+### `start(task?: string, cwd?: string) -> AuthorReport`
 
-Besides the report, the result includes the [agent guide](AGENT_GUIDE.md),
-which the agent follows for the whole session, and the session's mode page.
+Starts a session in the editor window for the current project, with the
+caller as its author. `task` is a short description shown in the narration
+panel. `cwd` is the agent's working directory, absolute: the agent should
+always give it, since not every harness starts the MCP server there. Without
+it, or if no editor window has it open, the harness's MCP roots and then the
+server's own working directory are tried. Fails if a session is already
+active in that window, or if no editor window has the project open.
+
+It makes the author's **private copy** of the working directory, and the
+result says where it is: the author does all its work there, with its usual
+tools. In a git repository, the copy is a detached worktree of `HEAD` with the
+uncommitted changes brought over; otherwise a plain copy, whose blocks the
+filesystem clones where it can. Folders too heavy to copy are linked instead,
+shared with the programmer's project: in a repository, every git-ignored
+entry (dependencies, build output); elsewhere, folders like `node_modules`,
+`.venv`, `dist`, `build` and `target`. The copy is removed when the session
+ends.
+
+Besides the report, the result includes the [author guide](AUTHOR_GUIDE.md),
+which the author follows for the whole session, and the session's mode page.
 
 Before a session, the programmer picks its **pairing mode** in the panel:
 `build` (get it done, shown as it goes) or `learn` (teach it: one small
 idea at a time), and for `learn`, who does the work (`drive`: the agent
 shows, the two share it, or the programmer drives). The mode is fixed for
-the session and told in the `start` report; its page rides with the guide
-and wins where the two differ.
+the session and told in the `start` and `join` reports; its page rides with
+the guide and wins where the two differ.
 
 File paths given to and returned by all tools are relative to the agent's
 working directory (absolute paths work too).
@@ -190,10 +224,51 @@ working directory (absolute paths work too).
 The session starts in the agent's turn, with no agent cursor until the first
 `move`.
 
+### `stage(title: string, notes: string, last?: boolean) -> AuthorReport`
+
+Records the copy as it is now as the next stage: everything that changed
+since the stage before (or since the copy was made), with `title`, shown to
+the programmer where the stage starts, and `notes` for the presenter, who
+explains the stage from them. `last` says it's the last stage: the task is
+done once it has played, unless the author records more. Fails with
+`invalid_arguments` when nothing changed. Returns at once, with the number it
+recorded and the stage playing now; see [Stages](#stages).
+
+### `wait() -> AuthorReport`
+
+Returns the author's news, or waits for it, up to `MAX_BLOCK`: the
+programmer's edits carried into the copy, what the presenter told it, code
+of its stages the programmer's edits overrode, playback catching up with
+its stages, the presenter joining or leaving, and the session ending.
+
+### `tell_presenter(text: string) -> AuthorReport`
+
+Passes `text` to the presenter, in its next report (`author`); a `listen`
+returns with it. Returns the author's news, without waiting.
+
+### `join(cwd?: string) -> Report`
+
+Joins the active session as its presenter. Its report tells the voice, the
+mode, the stages that began so far (`briefs`) and what's left of the one
+playing (`stage`). Besides the report, the result includes the
+[presenter guide](PRESENTER_GUIDE.md) and the mode page. Fails with
+`no_session` when no session is active. A presenter that shares the author's
+MCP server stays on the author's editor window; one with a server of its own
+finds the window from `cwd`, as `start` does.
+
+### `tell_author(text: string)`
+
+Passes `text` to the author, which hears it in `wait`. The author hears only
+this and the programmer's edits, not what the programmer says to the
+presenter.
+
 ### `end(summary?: string) -> Report`
 
 Ends the session. Anything still queued plays out first. `summary` is shown as
-the closing message in the narration panel. Returns the final report.
+the closing message in the narration panel. Returns the final report. While a
+presenter is connected, the author's `end` fails with `invalid_arguments`:
+the presenter ends the session, once it has played the last stage and the
+programmer is done.
 
 ### `step(beats: Beat[]) -> Report`
 
@@ -220,6 +295,11 @@ Returns when:
 - a batch finishes with a status other than `completed`, or carrying a
   `run`'s output — this is news the agent is usually waiting for, even
   mid-`listen`, or
+- a new stage begins, or the author tells the presenter something, or
+- in the agent's turn, its batches have all played while the stage still has
+  code to put in: the editor stands still while the presenter has work. Only
+  as they finish; a `listen` called after that waits for the programmer, say
+  for the answer to a question, or
 - `MAX_BLOCK` elapses.
 
 `listen` is how the agent "ends its turn" without actually ending it.
@@ -252,7 +332,15 @@ type Action =
   | { type_fast: string }
   | { delete: true }
   | { point: Span }
-  | { run: string; wait?: number };
+  | { run: string; wait?: number }
+  | { write: StageLines & { fast?: boolean } }
+  | { drop: StageLines };
+
+type StageLines = {
+  file?: string; // omitted: the cursor's file if the stage has lines left there, else the first that has
+  from?: string; // the first line left that contains it; omitted: the first line left in the file
+  through?: string; // the first line from `from` on that contains it; omitted: the rest of the stretch
+};
 ```
 
 A beat's voice and actions start together; the next beat starts once both are
@@ -389,6 +477,32 @@ commands can still run in the background with the agent's native tools.
   is typed into the terminal and the entry says the output wasn't captured.
 - Not allowed during the programmer's turn.
 
+### `write`
+
+Writes lines of the current [stage](#stages) into their file, where the
+stage has them, at a human pace: a line the stage changes is edited where it
+differs, lines it takes out are selected and deleted, and lines it adds are
+typed, top to bottom. It plays with the agent cursor, like `type`, and each
+piece of it is one undo stop. `fast` types at `type_fast`'s speed.
+
+It takes the lines by their text, as the report's `stage` shows them: `{}`
+is the next **stretch** left, the lines left up to the next line the file
+keeps; `from` and `through` pick the lines a beat's words are about. A
+`through` also takes the blank lines that end its stretch right after it, so
+the next `{}` starts on code. A text that no line left contains fails with
+`not_found`, listing the lines left.
+
+A `write` counts as editing its file, so a batch with one works in that file
+only. Cut off partway, it comes back reduced to the lines it didn't finish;
+a line it left half typed is finished in place by the rest.
+
+### `drop`
+
+Takes lines out of the current stage without touching the file: lines to add
+won't be written, lines to take out stay. For what the programmer doesn't
+want, or already wrote their own way. It picks lines as `write` does, and
+takes no time.
+
 ## Places
 
 `move` goes to a **place**, and `select` and `point` take a **span** of code.
@@ -478,15 +592,19 @@ lines, not as JSON strings full of escapes. It says, in order:
   A beat cut short comes first, as `{ do: rest }` without its `say`, which
   was already heard; a failed batch's failing beat comes first.
 
-3. **The batch this `step` submitted**, if it hasn't finished: playing or
+3. **The stages**, for the presenter: what the author told it, each stage
+   that began since the last report, with its title and the author's notes,
+   and what's left of the current stage, whenever that changed (see
+   [Stages](#stages)).
+4. **The batch this `step` submitted**, if it hasn't finished: playing or
    queued. Or, if it was rejected, the action of its beat that would fail, the error, and
    the code as it would read then. If the queue had run dry and the editor sat
    still for 5 seconds or more while the agent wrote it, how long, with a nudge
    to keep something playing. Time spent waiting in `listen` doesn't count.
-4. **The agent cursor**, only when it isn't where the agent last saw it in a
+5. **The agent cursor**, only when it isn't where the agent last saw it in a
    report, e.g. because the programmer's edits moved it.
-5. Whether the call returned because `MAX_BLOCK` elapsed, whether it's the
-   programmer's turn, and whether the session has ended. The `start` report,
+6. Whether the call returned because `MAX_BLOCK` elapsed, whether it's the
+   programmer's turn, and whether the session has ended. The `join` report,
    and any report where it changed, also says whether the programmer hears
    each `say` spoken (`voice: "on"`) or reads it (`voice: "off"`).
 
@@ -554,9 +672,12 @@ type Report = {
   paused?: true; // playback is paused in the editor: batches are held until the programmer resumes
   stillMs?: number; // step only: the editor sat still this long, the queue dry, before this batch came
   confirming?: { id: number; command: string }; // a `run` waiting for the programmer to allow it
-  voice?: "on" | "off"; // in the `start` report, and any report where it changed
-  mode?: "build" | "learn"; // the session's pairing mode; in the `start` report only
+  voice?: "on" | "off"; // in the `join` report, and any report where it changed
+  mode?: "build" | "learn"; // the session's pairing mode; in the `join` report only
   drive?: "show" | "together" | "try"; // with mode `learn`: who does the work
+  briefs?: { number: number; title: string; notes: string }[]; // stages that began since the last report
+  stage?: StageView; // the current stage, as the queued batches leave it, whenever it changed
+  author?: string[]; // what the author told the presenter since the last report
 };
 
 type BatchResult = {
@@ -573,7 +694,6 @@ type BatchResult = {
     truncated?: true;
     running?: true; // still running in its terminal
     shell?: string;
-    said?: string; // what the voice read out about it as it landed
   }[];
   unsaved?: { file: string; error: string }[]; // edited files that couldn't be saved
 };
@@ -670,6 +790,115 @@ The agent receives `{ kind: "turn", to: "user" }`.
 message). The agent receives the programmer's edits since the last report and
 `{ kind: "turn", to: "agent", message? }`.
 
+## Stages
+
+The author works ahead, out of sight; the presenter plays its work. Neither
+waits on the other, and the programmer never waits on the author's thinking,
+only on playback.
+
+**Recording.** `stage` snapshots the author's copy, through an index of its
+own beside the copy, so the copy's git state stays the author's, and records
+what changed since the stage before, file by file. Stages play in order, one
+at a time. The next begins once all of the current one is in the editor,
+written or dropped; the presenter hears it in its next report as a brief:
+its number, title and the author's notes. A file the stage adds is created
+as its lines are written, and one it deletes is deleted once its lines are
+out. Binary files can't be typed: they're put in place as their stage
+begins.
+
+**What's left.** A report's `stage` shows the current stage as the queued
+batches leave the code, whenever that changed: in each file, the lines still
+to write (`+`) and to take out (`-`), among the lines around them as they
+read. Lines in the file have their number; lines still to write have none,
+and go before the next line.
+
+```
+Stage 1 of 1, the last: A subtract function. What's left of it, as your queued batches leave the code: `+` lines to write, `-` lines to take out, with the lines around them as they read.
+
+calc.py:
+4
+  + def subtract(a, b):
+  +     return a - b
+  +
+  +
+5   print(add(2, 3))
+  + print(subtract(5, 3))
+```
+
+```ts
+type StageView = {
+  number: number;
+  title: string;
+  of: number; // how many stages the author has recorded so far
+  last?: true; // the author recorded its last stage: no more are coming
+  left: StageFile[]; // none once the stage's code is all in
+  set_aside?: SetAside[]; // with the first report after it happened
+};
+
+type StageFile = {
+  file: string;
+  lines: { number?: number; text: string; change?: "write" | "remove" }[];
+  more?: number; // how many more lines are left, after the ones shown
+  delete?: true; // the stage deletes the file, once its lines are out
+};
+
+type SetAside = { file: string; stage: number; plan: string; kept: string };
+```
+
+**The programmer's edits stand.** What's left is tracked by the lines'
+identities, not their numbers, so it stays right while anyone edits, and an
+edit by the programmer is theirs, never drift to undo:
+
+- a line of the stage they type themselves counts as written; one still to
+  write that they delete is dropped; one due to go that they changed stays;
+  lines they add are theirs and stay.
+- Where a stage changes code the programmer has already changed their own
+  way, their version is kept and the stage's is **set aside**: the
+  presenter (in `stage.set_aside`) and the author (a `set_aside` event) hear
+  both versions.
+- Edits in the editor that aren't a stage's code, the programmer's or the
+  presenter's own, are **carried** into the author's copy, merged with its
+  own changes, and the author hears of them once the typing pauses: an
+  `edit` event, with `carried: false` where they collided with the author's
+  changes and stayed out of the copy.
+
+**The author's news.** `start`, `stage`, `wait` and `tell_presenter` return
+an author report:
+
+```ts
+type AuthorReport = {
+  copy?: string; // with `start`: the author's private copy
+  recorded?: number; // with `stage`: the stage it recorded
+  playing: number; // the stage being played, 0 before the first
+  stages: number; // how many are recorded
+  events: AuthorEvent[];
+  mode?: "build" | "learn"; // with `start`
+  drive?: "show" | "together" | "try";
+  ended?: true;
+};
+
+type AuthorEvent =
+  | { kind: "edit"; file: string; diff: string; by: "programmer" | "presenter"; carried: boolean }
+  | { kind: "told"; text: string } // from the presenter's `tell_author`
+  | ({ kind: "set_aside" } & SetAside)
+  | { kind: "caught_up"; stage: number; last?: true }
+  | { kind: "presenter"; present: boolean }
+  | { kind: "end"; summary?: string };
+```
+
+- `caught_up`: the editor has all of the recorded stages, so the programmer
+  waits on the next. With `last`, it was the last stage, and the presenter
+  is wrapping up: the author records more only if there's more to do.
+- `presenter`: a presenter joined, or its connection closed. The session
+  goes on without one: the author starts a new presenter, or joins and
+  presents the rest itself.
+
+**The compare view.** When the session ends, the extension keeps the
+prepared version, each file as the author's last stage left it, and the
+panel offers to compare it with the code as the session left it: what the
+programmer and the presenter changed on the way. The copy itself is
+removed.
+
 ## Files, saving, and native tools
 
 - Files the agent edits via the protocol are **saved automatically** when a
@@ -696,11 +925,13 @@ message). The agent receives the programmer's edits since the last report and
   them instead: `say` what it's about to run and why, and `say` what came out
   of it afterwards.
 
-## Guidance for the agent
+## Guidance for the agents
 
-How the agent should use this protocol to give the programmer a good
-experience (order of work, narration, background vs. visible work) is in
-[AGENT_GUIDE.md](AGENT_GUIDE.md), which `start` returns to the agent.
+How the agents should use this protocol to give the programmer a good
+experience is in two guides: [AUTHOR_GUIDE.md](AUTHOR_GUIDE.md), which `start`
+returns (getting the presenter going, cutting the work into stages, notes),
+and [PRESENTER_GUIDE.md](PRESENTER_GUIDE.md), which `join` returns (order of
+work, narration, background vs. visible work, the programmer's requests).
 
 ## Examples
 

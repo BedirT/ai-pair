@@ -29,6 +29,14 @@ Status: **draft**.
   extension: sessions, the batch queue, the playback scheduler, place
   resolution, cursor tracking, the event log, and report assembly. It has no
   editor dependencies, so it can be tested against a fake editor.
+- **The author's copy** ([`copy.ts`](packages/core/src/copy.ts), behind
+  `CopyPort`) is where the author works: a detached git worktree of `HEAD`
+  with the uncommitted changes brought over, or a plain copy outside git,
+  with ignored or heavy folders linked rather than copied. Stages are
+  snapshots of it, committed through an index of their own; the core diffs
+  them into a plan of lines ([`plan.ts`](packages/core/src/plan.ts)) that
+  `write` plays, and carries the editor's other edits back into it with a
+  three-way merge ([`merge.ts`](packages/core/src/merge.ts)).
 - **The VS Code adapter** is a thin layer over the VS Code API: apply edits with
   undo stops, report document changes, render decorations, scroll, save. It
   tells the agent's edits apart from the programmer's by tracking the document
@@ -133,11 +141,18 @@ ends it, goes back to the harness, and may pair again later.
 A **session**:
 
 - **starts** when the agent calls `start`, typically because the programmer
-  asked it to pair, or ran the `start` prompt. The panel opens.
+  asked it to pair, or ran the `start` prompt. The panel opens. That agent is
+  the session's **author**; the bridge knows its calls by the connection that
+  started the session.
+- is **presented** by whoever calls `join`: usually the author's subagent,
+  which may come over a connection of its own (a relay of its own) or over
+  the author's. A presenter's connection closing tells the author, and the
+  session goes on; the author's closing ends it.
 - **ends** when:
   - the programmer presses End session in the panel, or
-  - the agent calls `end` (e.g. the programmer said they're done), or
-  - the relay disconnects (the harness exited), or
+  - an agent calls `end`: the presenter, after the last stage, or the
+    author, when no presenter is connected, or
+  - the author's relay disconnects (the harness exited), or
   - the window closes.
 - **belongs to one window**, and a window has at most one session at a time. A
   `start` while another session is active in that window is rejected.
@@ -145,7 +160,10 @@ A **session**:
 Outside a session, pair tools other than `start` fail with `no_session`, so an
 agent can't accidentally drive the editor when the programmer isn't pairing.
 The programmer's edits between sessions aren't tracked. A new session starts
-fresh, and the agent should re-read what it needs.
+fresh, and the agent should re-read what it needs. When a session ends, the
+author's copy is removed, and the files as its last stage left them are kept
+for the panel's compare view (`aiPairPrepared:` documents), until the next
+session.
 
 The panel keeps each session's narration history. Between sessions it shows
 "No active session", and how to start one.
@@ -172,9 +190,14 @@ the panel's Start button (Build, or Learn at three splits of who does the
 work; remembered, and fixed once a session starts), asks the agent to pair
 ("let's pair on adding a todos API, I'm new to Express"), or runs the
 server's `start` prompt (in Claude Code: `/mcp__pair__start`). The agent
-calls `start`, which returns the [agent guide](AGENT_GUIDE.md) and the
+calls `start`, which returns the [author guide](AUTHOR_GUIDE.md) and the
 mode's page (`modeGuide.ts` in the relay, from the mode in the first
-report) along with the first report.
+report) along with the first report. The guide has the author start its
+presenter at once, a subagent on its own model with thinking off where the
+harness has them (OMP's `pair-presenter` agent, which the setup writes beside
+OMP's MCP configuration),
+whose `join` returns the [presenter guide](PRESENTER_GUIDE.md) and the same
+mode page.
 
 **An agent, from the editor.** The panel's **Start** (or _AI Pair: Start
 Agent_) sets the pair server up in the chosen agent if it isn't, then
@@ -228,8 +251,8 @@ the reading time, if shorter), and the beat lasts as long as the longer of
 reading and working. Interruptions settle the `speak` promise by stopping
 the voice. Rehearsals never get a voice: they are silent.
 
-The agent is told whether the voice is on (`VoicePort.enabled`): in the
-`start` report, and again in the first report after it changes, so it
+The presenter is told whether the voice is on (`VoicePort.enabled`): in the
+`join` report, and again in the first report after it changes, so it
 writes `say` for the ear or for the eye.
 
 **Speech is made ahead.** When a batch is queued, the controller hands each of
@@ -337,7 +360,7 @@ packages/
   core/       editor-agnostic session and playback logic, and the WebSocket
               server (bridge) with discovery
   relay/      pair-mcp: stdio MCP ↔ WebSocket; tool schemas, instructions,
-              the start prompt; bundles AGENT_GUIDE.md at build time
+              the start prompt; bundles AUTHOR_GUIDE.md and PRESENTER_GUIDE.md
   vscode/     the extension: adapter, panel, launcher, setup; ships the relay
 ```
 

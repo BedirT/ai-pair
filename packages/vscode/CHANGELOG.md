@@ -2,18 +2,43 @@
 
 ## Unreleased
 
-- **Less dead air while the agent thinks.** With the voice on, a run's
-  result is read out the moment it lands, while the agent is still
-  reading it: *It printed 5.0.*, *It printed 40 lines, ending with 3
-  passed.*, *It failed: NameError: name 'x' is not defined.* The agent
-  is told what you heard, so it goes on from there instead of repeating
-  it. If it then thinks for long, the voice says a short line that fits,
-  like *Mm. Let me see.*, and once more if it goes on. The extension says
-  these itself, so they work with any agent and cost it no time. The
-  agent is also told to answer news with one short line first and keep
-  its next batch small, so you hear back sooner. And a run's output now
-  reaches an agent waiting on it as soon as its batch ends, instead of
-  after everything queued behind it.
+- **Staged pairing: the agent works first, then shows you.** Your agent
+  now does the real work at its own pace in a private copy of your
+  project, with no pairing rules slowing it down, and records it in
+  stages: small steps that each run on their own, with notes on why. A
+  presenter, a subagent it starts on its own model with thinking off
+  (or the agent itself, if it has no subagents; for OMP, the setup adds
+  a `pair-presenter` agent for this), plays each stage in your editor and explains it while
+  the agent works on the next, so you almost never wait on its thinking.
+  The presenter types a stage's lines with a new `write` action, handles
+  your small requests itself, and passes bigger ones to the agent. Your
+  edits always stand: both agents treat them as yours and build on them,
+  never undo them as drift. Each stage starts with its own divider in
+  the panel's history. A change in a stage plays as one piece: a blank
+  line next to it is never split off to be typed on its own. When the
+  presenter asks you something, it stops and listens for your answer;
+  in Learn mode it asks only now and then, where a bigger idea comes
+  together. And when its batches have played while a stage still has
+  code to type, it hears so at once, instead of sitting out a long wait.
+- **Compare with prepared.** After a session with stages, a button in
+  the panel (also *AI Pair: Compare with Prepared*) opens the agent's
+  prepared version beside the final code, so you see at a glance what
+  changed on the way.
+- **Paths in projects opened through a symlink.** A project opened in
+  VS Code through a symlinked folder (like `/tmp` on macOS) is now
+  matched to the agent's working directory by its real path, so files
+  aren't missed or opened twice.
+- **Less dead air while the agent thinks.** With the voice on, if the
+  agent thinks for a few seconds after a run or something you did, the
+  voice says a short line that fits, like *Mm. Let me see.*, and once
+  more if it goes on. The extension says these itself, so they work with
+  any agent and cost it no time. It never reads a run's output out: it's
+  on your screen, and the agent says what it makes of it in its own
+  words, without announcing beforehand what it expects. The agent is
+  also told to answer news with one short line first and keep its next
+  batch small, so you hear back sooner. And a run's output now reaches an
+  agent waiting on it as soon as its batch ends, instead of after
+  everything queued behind it.
 - **The panel's menus live in the panel, and fit it.** Voice and keyboard
   are picked from small menus right beside their toggles, like speed and
   mode already were, instead of a list at the top of the window. Voices
