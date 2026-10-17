@@ -1,12 +1,28 @@
 // The protocol state machine: sessions, the batch queue, and reports. Playing a batch is player.ts.
 // See PROTOCOL.md for the rules implemented here.
 
-import type { Beat, BatchResult, Event, Excerpt, FileContent, Report, RunResult, Turn } from "@ai-pair/protocol"
+import type {
+  AuthorEvent,
+  AuthorReport,
+  Beat,
+  BatchResult,
+  Event,
+  Excerpt,
+  FileContent,
+  Report,
+  RunResult,
+  SetAside,
+  StageBrief,
+  StageFile,
+  StageView,
+  Turn,
+} from "@ai-pair/protocol"
 import { CURSOR_MARKER, ToolError } from "@ai-pair/protocol"
 import { fileDiff } from "./diff"
 import { LineIds, type Sighting } from "./lines"
+import { StagePlan, type FileView, type ReadFile, type StageRecord } from "./plan"
 import { agentPath, displayPath, Player, programOf, sayPlans, type Scene } from "./player"
-import type { AgentState, Change, CursorView, EditorPort, KeysPort, PanelPort, Ref, SharedSelection, VoicePort } from "./ports"
+import type { AgentState, Change, CopyFactory, CopyPort, CursorView, EditorPort, KeysPort, PanelPort, Ref, SharedSelection, VoicePort } from "./ports"
 import { followChange, rehearse, type Rehearsal } from "./rehearsal"
 import { fileLines } from "./text"
 import { Timeline } from "./timeline"
@@ -50,14 +66,20 @@ const CONFIRM_ASK = "Okay to run it? Allow it in the panel."
  */
 const STILL_NOTE_MS = 5000
 
+/**
+ * How many lines left of a stage each report shows, per file: the presenter writes from the top
+ * of what's left, so the rest can wait, and a long new file isn't repeated whole in every report.
+ */
+const STAGE_LINES_SHOWN = 60
+
 /** What the agent last heard that it now has to answer: it picks the words the voice fills its thinking with. */
 type News = "ran" | "failed" | "message" | "interrupted" | "drained"
 
 /**
  * Said by the voice, not the agent, when the agent goes quiet to think: a person at the desk
  * would make a sound, not sit in silence. Fitted to what it's answering, and short, so they never
- * hold back the agent's own words for long. A run's result was read out already, so after one
- * they're about thinking it over, not about looking. `long`: still thinking, a while later.
+ * hold back the agent's own words for long. They never say what a run printed: what to make of
+ * it is the agent's to say. `long`: still thinking, a while later.
  */
 const FILLERS: Record<News | "long", string[]> = {
   ran: ["Okay, let me think about that.", "Alright. One moment.", "Mm. Let me see."],
@@ -68,38 +90,13 @@ const FILLERS: Record<News | "long", string[]> = {
   long: ["Still working it out.", "Bear with me, almost there.", "Still thinking this one through."],
 }
 /**
- * How long the agent may think in silence before the voice fills it. After a run, its read-out
- * fills the first seconds; when the editor ran out of written batches, a beat is the agent's to take.
+ * How long the agent may think in silence before the voice fills it. When the editor ran out of
+ * written batches, a beat is the agent's to take.
  */
-const FILL_FIRST_MS: Record<News, number> = { ran: 6000, failed: 6000, message: 3000, interrupted: 3000, drained: STILL_NOTE_MS }
+const FILL_FIRST_MS: Record<News, number> = { ran: 3000, failed: 3000, message: 3000, interrupted: 3000, drained: STILL_NOTE_MS }
 /** And again after that, at most. */
 const FILL_AGAIN_MS = 15_000
 const MAX_FILLS = 2
-
-/** Longer than this, a line of output is read out by its length, not word by word. */
-const READ_OUT_CHARS = 100
-
-/**
- * A run's result in words, as a person reads it off the screen: a short output whole, a long one
- * by its length and last line (where a summary or the error is), a failure by its last line. Text a
- * voice can't say — paths, hashes, a wall of symbols — is counted, not read.
- */
-function readOut(run: RunResult): string {
-  // Banners like `==== 3 passed ====` are decoration: only the words between are said. A lone
-  // sign, as in `-1`, is the number's.
-  const lines = run.output
-    .split(/\r?\n/)
-    .map((line) => line.replace(/^\s*([=\-*#~_])\1{2,}|([=\-*#~_])\2{2,}\s*$/g, "").trim())
-    .filter((line) => line !== "")
-  const sayable = (text: string) => text.length <= READ_OUT_CHARS && !/\S{25,}/.test(text)
-  const end = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`)
-  const last = lines.at(-1)
-  if (run.exit_code !== 0) return last && sayable(last) ? `It failed: ${end(last)}` : `It failed, with exit code ${run.exit_code}.`
-  if (!last) return "It ran, with no output."
-  if (lines.length <= 3 && sayable(lines.join(", "))) return `It printed ${end(lines.join(", "))}`
-  const count = lines.length === 1 ? "a long line" : `${lines.length} lines`
-  return sayable(last) && lines.length > 1 ? `It printed ${count}, ending with ${end(last)}` : `It printed ${count}.`
-}
 
 type Batch = {
   id: number
@@ -164,6 +161,56 @@ type Session = {
   takeBackFill?: () => void
   /** The filler said last, so the next one is a different one. */
   lastFill?: string
+  /** How it pairs, as picked when it started. */
+  mode: Mode
+  /** The author's side: its private copy, the stages it recorded, and its news. */
+  author: Author
+  /** The stage being played, and what's left of it, as the editor reads now. */
+  plan: StagePlan
+  /** Stages begun and not yet told to the presenter, with their notes. */
+  briefs: StageBrief[]
+  /** The last stage the presenter was told of. */
+  briefed: number
+  /** What the author told the presenter, not yet reported. */
+  told: string[]
+  /** The stage view as last reported, so it's only reported again when it changed. */
+  shownStage?: string
+  /** The stage as last worked out for a report, with the queued batches played, still has code to put in. */
+  stageLeft: boolean
+  /** Code of the stages set aside for the programmer's: as told already, and not yet told to the presenter. */
+  asideTold: Set<string>
+  aside: SetAside[]
+  /** Starting stages, one at a time: two at once could start the same one twice. */
+  advancing: Promise<void>
+}
+
+/** The author's side of a session. */
+type Author = {
+  copy: CopyPort
+  /** Shared with every plan, which reads the stages from it as they're recorded. */
+  stages: StageRecord[]
+  /** The snapshot the next stage is told apart from: the last stage's, or the copy as it was made. */
+  last: string
+  /** It recorded its last stage: none are coming, unless it records more. */
+  done: boolean
+  events: AuthorEvent[]
+  /** Edits in the editor that aren't a stage's code, still to carry into the copy, in order. */
+  carry: Carry[]
+  /** The programmer paused after editing: their edits are news for a waiting author. */
+  settled: boolean
+  settleTimer?: NodeJS.Timeout
+  /** The last stage the author was told playback caught up with. */
+  caughtUp: number
+}
+
+type Carry = { file: string; before: string; after: string; by: "programmer" | "presenter" }
+
+type Mode = { kind: "build" | "learn"; drive?: "show" | "together" | "try" }
+
+type AuthorCall = {
+  timer: NodeJS.Timeout
+  resolve: (report: AuthorReport) => void
+  reject: (error: unknown) => void
 }
 
 type Call = {
@@ -179,81 +226,209 @@ const cancelled = () => new ToolError("cancelled", "The call was cancelled.")
 
 export class Controller {
   private session: Session | null = null
+  /** The session that ended last, so its author's next call hears it ended instead of failing. */
+  private retired: Session | null = null
   private call: Call | null = null
   private chain: Promise<unknown> = Promise.resolve()
+  /** The author's calls run in turn, apart from the presenter's: each waits on its own. */
+  private authorCall: AuthorCall | null = null
+  private authorChain: Promise<unknown> = Promise.resolve()
   private nextBatchId = 1
   private pauseReasons = new Set<string>()
   private speed = 1
   /** The mode the next session runs in; fixed for a session once it starts. */
-  private mode: { kind: "build" | "learn"; drive?: "show" | "together" | "try" } = { kind: "build" }
+  private mode: Mode = { kind: "build" }
   private voice: VoicePort | undefined
   private keys: KeysPort | undefined
   private lastPosted = ""
+  /** After a session with stages: each file they changed as the author left it, to compare with the code. */
+  private preparedFiles: Array<{ file: string; text?: string }> = []
 
   constructor(
     private readonly editor: EditorPort,
     private readonly panel: PanelPort,
+    private readonly copies: CopyFactory,
     private config: Config = defaultConfig,
   ) {}
 
   // ---- Tools -------------------------------------------------------------
 
-  start(task?: string, root?: string): Promise<Report> {
-    return this.serialize(undefined, async () => {
-      if (this.session && !this.session.ended) {
-        throw new ToolError("session_active", "A pairing session is already active in this window.")
-      }
-      const scene: Scene = {
+  /** The author starts a session, and gets its private copy of the workspace to work in. */
+  start(task?: string, root?: string, signal?: AbortSignal): Promise<AuthorReport> {
+    return this.serialize(
+      signal,
+      async () => {
+        if (this.session && !this.session.ended) {
+          throw new ToolError("session_active", "A pairing session is already active in this window.")
+        }
         // In the editor's spelling, so paths inside it are reported relative to it.
-        root: root && this.editor.resolvePath(root),
-        turn: "agent",
-        cursor: null,
-        selection: null,
-        point: null,
-        focus: "cursor",
-        pointFar: false,
-        allowed: { all: false, programs: new Set() },
-      }
-      const timeline = new Timeline(this.pauseReasons.size > 0)
-      const lines = LineIds.editor()
-      const s: Session = {
-        task,
-        scene,
-        player: new Player(scene, {
-          editor: this.editor,
-          panel: this.panel,
-          pacing: timeline,
-          config: () => this.config,
-          speed: () => this.speed,
-          render: () => this.render(),
-          confirm: (id, command) => this.confirm(s, id, command),
-          voice: () => (this.voice?.ready ? this.voice : undefined),
-          keys: () => this.keys,
+        const folder = root && this.editor.resolvePath(root)
+        const copy = await this.copies(folder ?? this.editor.resolvePath("."))
+        const scene: Scene = {
+          root: folder,
+          turn: "agent",
+          cursor: null,
+          selection: null,
+          point: null,
+          focus: "cursor",
+          pointFar: false,
+          allowed: { all: false, programs: new Set() },
+        }
+        const timeline = new Timeline(this.pauseReasons.size > 0)
+        const lines = LineIds.editor()
+        const stages: StageRecord[] = []
+        const s: Session = {
+          task,
+          scene,
+          player: new Player(scene, {
+            editor: this.editor,
+            panel: this.panel,
+            pacing: timeline,
+            config: () => this.config,
+            speed: () => this.speed,
+            render: () => this.render(),
+            confirm: (id, command) => this.confirm(s, id, command),
+            voice: () => (this.voice?.ready ? this.voice : undefined),
+            keys: () => this.keys,
+            lines,
+            plan: () => s.plan,
+            offPlan: (file, before, after) => {
+              this.toCarry(s, file, before, after, "presenter")
+              this.settle(s)
+            },
+          }),
+          queue: [],
+          finished: [],
+          events: [],
+          stale: false,
+          baselines: new Map(),
+          latest: new Map(),
+          timeline,
+          running: false,
+          ended: false,
+          navigatorReady: false,
           lines,
-        }),
-        queue: [],
-        finished: [],
-        events: [],
-        stale: false,
-        baselines: new Map(),
-        latest: new Map(),
-        timeline,
-        running: false,
-        ended: false,
-        navigatorReady: false,
-        lines,
-        seen: new Map(),
-        fills: 0,
-      }
-      this.session = s
-      this.lastPosted = ""
-      this.panel.post({ type: "session", active: true, task })
+          seen: new Map(),
+          fills: 0,
+          mode: this.mode,
+          author: { copy, stages, last: copy.base, done: false, events: [], carry: [], settled: false, caughtUp: 0 },
+          plan: new StagePlan(stages),
+          briefs: [],
+          briefed: 0,
+          told: [],
+          stageLeft: false,
+          asideTold: new Set(),
+          aside: [],
+          advancing: Promise.resolve(),
+        }
+        this.session = s
+        this.retired = null
+        this.preparedFiles = []
+        this.lastPosted = ""
+        this.panel.post({ type: "session", active: true, task })
+        this.render()
+        return { copy: copy.root, playing: 0, stages: 0, events: [], mode: s.mode.kind, ...(s.mode.drive ? { drive: s.mode.drive } : {}) }
+      },
+      true,
+    )
+  }
+
+  /**
+   * The author records its copy as it is now as the next stage: what changed since the stage
+   * before, with its notes for the presenter. `last`: it's the last, unless more are recorded.
+   */
+  stage(title: string, notes: string, last?: boolean, signal?: AbortSignal): Promise<AuthorReport> {
+    return this.serialize(
+      signal,
+      async () => {
+        const s = this.authorSession()
+        if (this.session !== s || s.ended) return this.authorReport(s)
+        const a = s.author
+        const snapshot = await a.copy.snapshot()
+        const changes = (await a.copy.changes(a.last, snapshot)).map((c) => ({ ...c, file: this.editor.resolvePath(c.file) }))
+        if (changes.length === 0) {
+          throw new ToolError("invalid_arguments", `Nothing changed in your copy since ${a.stages.length > 0 ? `stage ${a.stages.length}` : "you started"}: a stage is the work since the one before.`)
+        }
+        a.last = snapshot
+        a.done = last === true
+        const record: StageRecord = { number: a.stages.length + 1, title, notes, snapshot, changes }
+        a.stages.push(record)
+        await this.advance(s)
+        return this.authorReport(s, { recorded: record.number })
+      },
+      true,
+    )
+  }
+
+  /** The author waits for news: the programmer's words and edits, the presenter's, or playback catching up. */
+  wait(signal?: AbortSignal): Promise<AuthorReport> {
+    return this.serialize(
+      signal,
+      () => {
+        const s = this.authorSession()
+        return new Promise<AuthorReport>((resolve, reject) => {
+          const call: AuthorCall = { resolve, reject, timer: setTimeout(() => this.finishAuthor(s), this.config.maxBlockMs) }
+          this.authorCall = call
+          signal?.addEventListener("abort", () => {
+            if (this.authorCall !== call) return
+            this.authorCall = null
+            clearTimeout(call.timer)
+            reject(cancelled())
+          })
+          this.authorPump()
+        })
+      },
+      true,
+    )
+  }
+
+  /** The author tells the presenter something, which it hears in its next report. */
+  tellPresenter(text: string, signal?: AbortSignal): Promise<AuthorReport> {
+    return this.serialize(
+      signal,
+      async () => {
+        const s = this.authorSession()
+        if (this.session === s && !s.ended) {
+          s.told.push(text)
+          this.pump()
+        }
+        return this.authorReport(s)
+      },
+      true,
+    )
+  }
+
+  /** The presenter joins the session the author started: its first report, with the stages so far. */
+  join(signal?: AbortSignal): Promise<Report> {
+    return this.serialize(signal, async () => {
+      const s = this.requireSession()
+      s.author.events.push({ kind: "presenter", present: true })
+      this.authorPump()
+      // A presenter joining again starts afresh: it's told everything a first report tells,
+      // including the notes of the stage being played.
+      s.shownStage = undefined
+      s.toldVoice = undefined
+      const current = s.author.stages[s.briefed - 1]
+      if (current && s.briefs.length === 0) s.briefs.push({ number: current.number, title: current.title, notes: current.notes })
+      const report: Report = { ...this.snapshot(s, undefined, false), mode: s.mode.kind, ...(s.mode.drive ? { drive: s.mode.drive } : {}) }
       this.render()
-      // The agent writes its words for the ear or the eye, so it's told from the start which it is.
-      // The mode is told the same way: it governs how the whole session pairs.
-      s.toldVoice = this.voice?.enabled === true
-      return { batches: [], events: [], turn: scene.turn, voice: s.toldVoice ? "on" : "off", mode: this.mode.kind, ...(this.mode.drive ? { drive: this.mode.drive } : {}) }
+      return this.complete(s, report)
     })
+  }
+
+  /** The presenter tells the author something, which it hears at once if it's waiting. */
+  tellAuthor(text: string): void {
+    const s = this.requireSession()
+    s.author.events.push({ kind: "told", text })
+    this.authorPump()
+  }
+
+  /** The presenter's connection closed; the author's stays, and hears it. */
+  presenterLeft(): void {
+    const s = this.activeSession()
+    if (!s) return
+    s.author.events.push({ kind: "presenter", present: false })
+    this.authorPump()
   }
 
   step(beats: Beat[], signal?: AbortSignal): Promise<Report> {
@@ -339,7 +514,19 @@ export class Controller {
     s.finished.unshift(...report.batches)
     s.events.unshift(...report.events)
     if (report.events.some(interrupting) || report.batches.some((b) => b.status !== "completed")) s.stale = true
+    if (report.briefs) s.briefs.unshift(...report.briefs)
+    if (report.author) s.told.unshift(...report.author)
+    if (report.stage) s.shownStage = undefined
+    if (report.stage?.set_aside) s.aside.unshift(...report.stage.set_aside)
     this.update()
+  }
+
+  /** As `restore`, for a report of the author's. */
+  restoreAuthor(report: AuthorReport): void {
+    const s = this.session ?? this.retired
+    if (!s) return
+    s.author.events.unshift(...report.events)
+    this.authorPump()
   }
 
   // ---- Programmer input --------------------------------------------------
@@ -368,6 +555,14 @@ export class Controller {
     const s = this.activeSession()
     if (!s) return
     this.recordEdit(s, file, before, after, changes, "programmer")
+    // The stage is looked at at once: a line of it they type and then delete again is theirs to
+    // delete, and dropped, not written back.
+    if (s.plan.has(file)) s.plan.view(file, after, s.lines.of(file, after))
+    if (!s.stale) {
+      for (const { after: r } of s.queue) if (r?.plan?.has(file) && !r.texts.has(file)) r.plan.view(file, after, r.lines.of(file, after))
+    }
+    this.toCarry(s, file, before, after, "programmer")
+    this.settle(s)
     if (s.scene.turn === "agent") {
       this.interrupt(s)
     } else {
@@ -378,6 +573,8 @@ export class Controller {
       }, this.config.navigatorIdleMs)
     }
     this.update()
+    // They may have written what was left of the stage.
+    void this.advance(s)
   }
 
   /**
@@ -447,19 +644,23 @@ export class Controller {
     if (!s) return
     s.ended = true
     s.events.push({ kind: "end" })
+    s.author.events.push({ kind: "end" })
     this.interrupt(s)
     this.panel.post({ type: "session", active: false, reason: "user" })
     this.update()
+    this.authorPump()
   }
 
-  /** The agent is gone (the relay disconnected). */
+  /** The agent is gone: the connection that started the session closed. */
   disconnect(): void {
     const s = this.session
-    if (this.call) {
-      clearTimeout(this.call.timer)
-      this.call.reject(new ToolError("no_session", "Disconnected."))
-      this.call = null
+    for (const call of [this.call, this.authorCall]) {
+      if (!call) continue
+      clearTimeout(call.timer)
+      call.reject(new ToolError("no_session", "Disconnected."))
     }
+    this.call = null
+    this.authorCall = null
     if (!s) return
     this.close(s)
     if (!s.ended) this.panel.post({ type: "session", active: false, reason: "disconnected" })
@@ -584,17 +785,21 @@ export class Controller {
 
   // ---- Calls and reports -------------------------------------------------
 
-  /** Runs tool calls one at a time. A call cancelled while waiting its turn never runs. */
-  private serialize<T>(signal: AbortSignal | undefined, fn: () => Promise<T>): Promise<T> {
+  /**
+   * Runs tool calls one at a time: the presenter's in one line, the author's in another. A call
+   * cancelled while waiting its turn never runs.
+   */
+  private serialize<T>(signal: AbortSignal | undefined, fn: () => Promise<T>, author = false): Promise<T> {
     const guarded = () => (signal?.aborted ? Promise.reject(cancelled()) : fn())
-    const run = this.chain.then(guarded, guarded)
-    this.chain = run.catch(() => {})
+    const run = (author ? this.authorChain : this.chain).then(guarded, guarded)
+    if (author) this.authorChain = run.catch(() => {})
+    else this.chain = run.catch(() => {})
     return run
   }
 
   /** Plays a batch in memory, from where the queued batches leave off, or the editor as it is. */
   private rehearse(s: Session, beats: Beat[]): ReturnType<typeof rehearse> {
-    const from = s.queue.at(-1)?.after ?? { scene: s.scene, texts: new Map(), lines: s.lines, edits: new Set<string>() }
+    const from = s.queue.at(-1)?.after ?? { scene: s.scene, texts: new Map(), gone: new Set<string>(), lines: s.lines, plan: s.plan, edits: new Set<string>() }
     return rehearse(this.editor, this.config, from, beats, (file, line, id) => s.seen.get(file)?.get(line) === id)
   }
 
@@ -612,7 +817,7 @@ export class Controller {
     for (const sighting of rehearsal.sightings) this.saw(s, rehearsal.after.lines, sighting)
     const report = { ...this.snapshot(s, undefined, false), rejected }
     this.render()
-    return this.withCursor(s, report)
+    return this.complete(s, report)
   }
 
   private requireSession(): Session {
@@ -659,7 +864,10 @@ export class Controller {
       case "step":
         // Waiting with an empty batch is waiting for what played, and a run's output (or a failure)
         // is what it waits for: it comes as soon as it lands, not after the batches queued behind it.
-        if (!call.batch) return s.queue.length === 0 || s.finished.some((r) => r.status !== "completed" || (r.runs?.length ?? 0) > 0)
+        // A stage starting, or the author's words, are news to go on with.
+        if (!call.batch) {
+          return s.queue.length === 0 || s.briefs.length > 0 || s.told.length > 0 || s.finished.some((r) => r.status !== "completed" || (r.runs?.length ?? 0) > 0)
+        }
         return call.batch.state !== "queued" || this.room(s, call.batch)
       case "end":
         return s.queue.length === 0
@@ -669,7 +877,14 @@ export class Controller {
         // only reach it at the heartbeat. Its own finished typing is not news; `listen` stays the
         // programmer's.
         if (s.finished.some((r) => r.status !== "completed" || (r.runs?.length ?? 0) > 0)) return true
+        // So is a stage starting, or the author's words.
+        if (s.briefs.length > 0 || s.told.length > 0) return true
         if (s.queue.length > 0) return false
+        // Its batches have all played, and the stage still has code to put in: the editor stands
+        // still while the presenter has work. Waiting on here, it would sit out the whole wait,
+        // say beside a `step` sent in the same turn whose report already told it a stage began.
+        // Only as its batches finish: the `listen` after waits for the programmer, say for an answer.
+        if (s.scene.turn === "agent" && s.stageLeft && s.finished.length > 0) return true
         if (s.scene.turn === "agent") return s.events.some(interrupting)
         // The programmer's edits during their turn wait until they pause typing.
         return s.events.some((e) => e.kind !== "edit") || (s.navigatorReady && s.events.some(interrupting))
@@ -709,13 +924,236 @@ export class Controller {
     const closing = s.ended || call.kind === "end"
     const report = this.snapshot(s, call.batch, timedOut && !closing)
     if (closing) {
-      this.close(s)
+      this.close(s, call.summary)
       if (call.kind === "end" && !s.ended) {
         this.panel.post({ type: "session", active: false, reason: "agent", summary: call.summary })
       }
     }
     this.render()
-    void this.withCursor(s, report).then(call.resolve, () => call.resolve(report))
+    void this.complete(s, report).then(call.resolve, () => call.resolve(report))
+  }
+
+  /**
+   * Finishes a report: the stages that started, with their notes, what the author said, what's
+   * left of the stage if that changed, and the cursor.
+   */
+  private async complete(s: Session, report: Report): Promise<Report> {
+    if (this.session === s) {
+      await this.advance(s)
+      if (s.briefs.length > 0) report.briefs = s.briefs.splice(0)
+      if (s.told.length > 0) report.author = s.told.splice(0)
+      const stage = await this.stageView(s)
+      s.stageLeft = (stage?.left.length ?? 0) > 0
+      const key = stage && JSON.stringify(stage)
+      if (stage && key !== s.shownStage) {
+        report.stage = stage
+        s.shownStage = key
+      }
+    }
+    return this.withCursor(s, report)
+  }
+
+  // ---- Stages --------------------------------------------------------------
+
+  /**
+   * Starts the stages that are in, once the one before is all written, as the queued batches will
+   * leave the code, or as the editor has it when none are queued. One call at a time: two at once
+   * could start the same stage twice.
+   */
+  private advance(s: Session): Promise<void> {
+    const run = s.advancing.then(async () => {
+      if (this.session !== s) return
+      const tail = s.stale ? undefined : s.queue.at(-1)?.after
+      const plan = tail?.plan ?? s.plan
+      for (const stage of await plan.advance(this.reader(tail), tail?.lines ?? s.lines)) this.started(s, stage)
+      // Code set aside as a stage started is told to both, once, though it may start again.
+      for (const a of plan.setAside) {
+        const key = `${a.stage}\0${a.file}\0${a.plan}`
+        if (s.asideTold.has(key)) continue
+        s.asideTold.add(key)
+        const told = { ...a, file: this.displayPath(s, a.file) }
+        s.aside.push(told)
+        s.author.events.push({ kind: "set_aside", ...told })
+        this.authorPump()
+      }
+      await this.caughtUp(s)
+    })
+    s.advancing = run.catch(() => {})
+    return s.advancing
+  }
+
+  /** A stage started: the presenter is told of it, with the author's notes, and the panel marks it. */
+  private started(s: Session, stage: StageRecord): void {
+    // Started again, on the editor's code after the batches that started it were interrupted.
+    if (stage.number <= s.briefed) return
+    s.briefed = stage.number
+    s.briefs.push({ number: stage.number, title: stage.title, notes: stage.notes })
+    this.panel.post({ type: "stage", number: stage.number, title: stage.title })
+    // Binary files can't be typed: they're put in place as the stage starts.
+    for (const c of stage.changes) if (c.binary) void s.author.copy.restore(stage.snapshot, c.file).catch(() => {})
+    this.pump()
+  }
+
+  /** Tells the author, once, that the editor has all of the stages it recorded: the programmer waits on it. */
+  private async caughtUp(s: Session): Promise<void> {
+    const a = s.author
+    const n = s.plan.number
+    if (n === 0 || n !== a.stages.length || a.caughtUp >= n || s.queue.length > 0) return
+    const left = await s.plan.left(this.reader(), s.lines)
+    if (left.some((v) => v.pending > 0 || v.remove) || a.caughtUp >= n) return
+    a.caughtUp = n
+    a.events.push(a.done ? { kind: "caught_up", stage: n, last: true } : { kind: "caught_up", stage: n })
+    this.authorPump()
+  }
+
+  /** The stage being played, and what's left of it, as the queued batches will leave the code. */
+  private async stageView(s: Session): Promise<StageView | undefined> {
+    const tail = s.stale ? undefined : s.queue.at(-1)?.after
+    const plan = tail?.plan ?? s.plan
+    const stage = plan.current
+    if (!stage) return undefined
+    const read = this.reader(tail)
+    const lines = tail?.lines ?? s.lines
+    const left: StageFile[] = []
+    for (const view of await plan.left(read, lines)) {
+      if (view.pending === 0 && !view.remove) continue
+      left.push(this.stageFile(s, view, (await read(view.file)) ?? "", lines))
+    }
+    const result: StageView = { number: stage.number, title: stage.title, of: s.author.stages.length, left }
+    if (s.author.done) result.last = true
+    if (s.aside.length > 0) result.set_aside = s.aside.splice(0)
+    return result
+  }
+
+  /**
+   * What's left of a stage in a file, as the presenter is shown it: each line to write or take
+   * out, with the line of the file on either side. Only so many: the rest is counted.
+   */
+  private stageFile(s: Session, view: FileView, text: string, lines: LineIds): StageFile {
+    const shown = new Set<number>()
+    let pending = 0
+    view.items.forEach((item, i) => {
+      if (item.kind !== "write" && item.kind !== "remove") return
+      if (++pending > STAGE_LINES_SHOWN) return
+      for (let j = Math.max(0, i - 1); j <= Math.min(view.items.length - 1, i + 1); j++) shown.add(j)
+    })
+    const out: StageFile["lines"] = []
+    const numbers: number[] = []
+    for (const i of [...shown].sort((a, b) => a - b)) {
+      const item = view.items[i]!
+      if (item.kind === "write") {
+        out.push({ text: item.text, change: "write" })
+        continue
+      }
+      out.push(item.kind === "remove" ? { number: item.line, text: item.text, change: "remove" } : { number: item.line, text: view.lines[item.line - 1]! })
+      numbers.push(item.line)
+    }
+    // Lines it was shown it may go to by number, as with any code it's shown.
+    this.saw(s, lines, { file: view.file, text, lines: numbers })
+    const file: StageFile = { file: this.displayPath(s, view.file), lines: out }
+    if (pending > STAGE_LINES_SHOWN) file.more = pending - STAGE_LINES_SHOWN
+    if (view.remove) file.delete = true
+    return file
+  }
+
+  /** Reads files as the batch played in memory left them, or the editor has them: none if they don't exist. */
+  private reader(after?: Rehearsal): ReadFile {
+    return async (file) => {
+      if (after?.gone.has(file)) return undefined
+      const text = after?.texts.get(file)
+      if (text !== undefined) return text
+      try {
+        return await this.editor.getText(file)
+      } catch {
+        return undefined
+      }
+    }
+  }
+
+  /** Each file the stages changed as the author left it, after a session with stages: to compare with the code. */
+  get prepared(): ReadonlyArray<{ file: string; text?: string }> {
+    return this.preparedFiles
+  }
+
+  // ---- The author ----------------------------------------------------------
+
+  /** The session the author's calls are about: the active one, or the one that just ended. */
+  private authorSession(): Session {
+    const s = this.session ?? this.retired
+    if (!s) throw new ToolError("no_session", "No pairing session is active. Call `start` to begin one.")
+    return s
+  }
+
+  /** Answers a waiting author once there's news for it. */
+  private authorPump(): void {
+    const s = this.session ?? this.retired
+    if (!this.authorCall || !s) return
+    if (this.session !== s || s.ended || s.author.events.length > 0 || s.author.settled) this.finishAuthor(s)
+  }
+
+  private finishAuthor(s: Session): void {
+    const call = this.authorCall
+    if (!call) return
+    this.authorCall = null
+    clearTimeout(call.timer)
+    void this.authorReport(s).then(call.resolve, call.reject)
+  }
+
+  /** Everything the author hasn't heard yet. Edits in the editor are carried into its copy first. */
+  private async authorReport(s: Session, extra: { recorded?: number } = {}): Promise<AuthorReport> {
+    const a = s.author
+    const live = this.session === s && !s.ended
+    if (live) await this.carry(s)
+    a.settled = false
+    const report: AuthorReport = { ...extra, playing: s.plan.number, stages: a.stages.length, events: a.events.splice(0) }
+    if (!live) report.ended = true
+    return report
+  }
+
+  /** Brings the edits made in the editor since the author last heard into its copy, and tells it of them. */
+  private async carry(s: Session): Promise<void> {
+    const a = s.author
+    for (const e of a.carry.splice(0)) {
+      const carried = await a.copy.carry(e.file, e.before, e.after).catch(() => false)
+      const file = this.displayPath(s, e.file)
+      a.events.push({ kind: "edit", file, diff: fileDiff(file, e.before, e.after), by: e.by, carried })
+    }
+  }
+
+  /** An edit in the editor that isn't a stage's code, for the author's copy: one after another to a file is one. */
+  private toCarry(s: Session, file: string, before: string, after: string, by: Carry["by"]): void {
+    const last = s.author.carry.findLast((c) => c.file === file)
+    if (last?.after !== before) {
+      s.author.carry.push({ file, before, after, by })
+      return
+    }
+    last.after = after
+    if (by === "programmer") last.by = by
+  }
+
+  /** Edits are news for a waiting author once they pause, not with each keystroke. */
+  private settle(s: Session): void {
+    const a = s.author
+    clearTimeout(a.settleTimer)
+    a.settleTimer = setTimeout(() => {
+      a.settled = true
+      this.authorPump()
+    }, this.config.navigatorIdleMs)
+  }
+
+  /** Keeps what the stages prepared, to compare with the code, and removes the copy. */
+  private async retire(s: Session): Promise<void> {
+    const a = s.author
+    const last = a.stages.at(-1)
+    try {
+      if (last) {
+        const changes = await a.copy.changes(a.copy.base, last.snapshot)
+        this.preparedFiles = changes.flatMap((c) => (c.binary ? [] : [{ file: this.editor.resolvePath(c.file), text: c.after }]))
+        if (this.preparedFiles.length > 0) this.panel.post({ type: "compare" })
+      }
+    } finally {
+      await a.copy.dispose()
+    }
   }
 
   /** Adds the cursor's line to the report, unless it's where the agent last saw it, in a report's code or cursor. */
@@ -800,14 +1238,20 @@ export class Controller {
     return report
   }
 
-  private close(s: Session): void {
+  private close(s: Session, summary?: string): void {
     if (this.session === s) this.session = null
+    this.retired = s
     s.timeline.interrupt()
     this.voice?.stop()
     clearTimeout(s.navigatorTimer)
     clearTimeout(s.fillTimer)
+    clearTimeout(s.author.settleTimer)
     this.editor.renderPoint(null)
     this.render()
+    // The programmer ending it told the author already.
+    if (!s.ended) s.author.events.push(summary ? { kind: "end", summary } : { kind: "end" })
+    this.authorPump()
+    void this.retire(s).catch(() => {})
   }
 
   // ---- Queue ---------------------------------------------------------------
@@ -848,8 +1292,12 @@ export class Controller {
         this.render()
         const { result, sightings } = await s.player.play(batch.id, batch.beats)
         if (this.session !== s) break
-        // It played as it did in memory, so the lines it typed are the ones later batches were rehearsed with.
-        if (result.status === "completed" && batch.after) s.lines.adopt(batch.after.lines)
+        // It played as it did in memory, so the lines it typed are the ones later batches were
+        // rehearsed with, and the stage is as it left it.
+        if (result.status === "completed" && batch.after) {
+          s.lines.adopt(batch.after.lines)
+          if (batch.after.plan) s.plan = batch.after.plan
+        }
         for (const sighting of sightings) this.saw(s, s.lines, sighting)
         batch.state = "done"
         batch.result = result
@@ -858,21 +1306,13 @@ export class Controller {
         if (result.status !== "completed") this.interrupt(s)
         // Mark the next batch as playing before reporting, so the report says so.
         this.startHead(s)
-        // A run with nothing planned after it: the agent reads its result now, and the programmer
-        // would sit in silence while it does. The voice reads it off the screen at once, as a
-        // person at the desk would, and the report says so. A run left running has no result yet.
-        const ran = result.runs?.at(-1)
-        const settled = result.status === "completed" || result.error?.kind === "command_failed"
-        if (ran && ran.exit_code !== undefined && settled && s.queue.length === 0 && s.scene.turn === "agent" && this.voice?.ready) {
-          ran.said = readOut(ran)
-          void this.voice.speak(ran.said)
-        }
         // Run dry with no call waiting: the agent is writing the next batch while the editor sits still.
         if (result.status === "completed" && s.queue.length === 0 && this.call === null && s.scene.turn === "agent") {
           s.stillSince = Date.now()
           s.news = "drained"
         }
         this.update()
+        void this.advance(s)
       }
     } finally {
       s.running = false

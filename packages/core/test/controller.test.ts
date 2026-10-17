@@ -263,11 +263,12 @@ describe("timing", () => {
     expect(editor.text("a.ts")).toBe("abc")
   })
 
-  it("tells the agent whether the voice is on when the session starts, and again when it changes", async () => {
+  it("tells the presenter whether the voice is on when it joins, and again when it changes", async () => {
     const { controller } = setup({ "a.ts": "" })
     const voice = new FakeVoice()
     controller.setVoice(voice)
-    expect((await controller.start()).voice).toBe("on")
+    await controller.start()
+    expect((await controller.join()).voice).toBe("on")
     const same = await until(controller.step([{ do: [{ move: { file: "a.ts", line: 1, to: "line_end" } }] }]))
     expect(same.voice).toBeUndefined()
     voice.enabled = false
@@ -275,9 +276,10 @@ describe("timing", () => {
     expect((await until(controller.step([]))).voice).toBeUndefined()
   })
 
-  it("tells the agent the pairing mode when the session starts, and not again", async () => {
+  it("tells the author and the presenter the pairing mode when they start, and not again", async () => {
     const { controller } = setup({ "a.ts": "" })
     expect((await controller.start()).mode).toBe("build")
+    expect((await controller.join()).mode).toBe("build")
     const next = await until(controller.step([]))
     expect(next.mode).toBeUndefined()
     await controller.end()
@@ -287,6 +289,7 @@ describe("timing", () => {
     expect(start.drive).toBe("together")
     // Picking another mode mid-session doesn't leak into the running one: it's told only at start.
     controller.setMode("build")
+    expect((await controller.join()).mode).toBe("learn")
     expect((await until(controller.step([]))).mode).toBeUndefined()
   })
 
@@ -559,6 +562,7 @@ describe("rehearsal", () => {
   it("rejects a batch that would fail at once, with the code as it would read, playing nothing of it", async () => {
     const { editor, panel, controller } = setup({ "a.ts": "x\nx\n" })
     await controller.start()
+    await controller.join()
     await controller.read("a.ts")
     const report = await controller.step([{ say: "Here.", do: [{ move: { file: "a.ts", line: 2, to: "line_end" } }, { type: "y▌" }, { move: { line: 1, at: "xy▌" } }] }])
     expect(report).toEqual({
@@ -1416,50 +1420,6 @@ describe("run", () => {
     ])
   })
 
-  it("reads a run's result out as it lands when nothing is planned after it, and tells the agent what it said", async () => {
-    const { editor, controller } = setup({}, { confirmCommands: false, workAheadBatches: 2 })
-    editor.commandScript["python a.py"] = { ms: 100, exitCode: 0, output: "5.0\n" }
-    const voice = new FakeVoice()
-    controller.setVoice(voice)
-    await controller.start()
-    await controller.step([{ do: [{ run: "python a.py" }] }])
-    const report = await until(controller.step([]))
-    expect(voice.spoken.at(-1)).toBe("It printed 5.0.")
-    expect(report.batches[0]!.runs![0]!.said).toBe("It printed 5.0.")
-
-    // The agent planned past it: what it queued says what comes next, not the editor.
-    await controller.step([{ do: [{ run: "python a.py" }] }])
-    await controller.step([{ say: "Next." }])
-    const ahead = await until(controller.step([]))
-    expect(ahead.batches[0]!.runs![0]!.said).toBeUndefined()
-    expect(voice.spoken.filter((w) => w.startsWith("It printed"))).toHaveLength(1)
-    await until(controller.end())
-  })
-
-  it("reads out what a person would read off the screen: a short output, a long one's end, a failure's last line", async () => {
-    const cases: Array<[{ exitCode: number; output: string }, string]> = [
-      [{ exitCode: 0, output: "" }, "It ran, with no output."],
-      [{ exitCode: 0, output: "a 2\nb 3\n" }, "It printed a 2, b 3."],
-      [{ exitCode: 0, output: "-1\n" }, "It printed -1."],
-      [{ exitCode: 0, output: "collected 3 items\n\n===== 3 passed in 0.12s =====\n" }, "It printed collected 3 items, 3 passed in 0.12s."],
-      [{ exitCode: 0, output: Array.from({ length: 40 }, (_, i) => `step ${i + 1}`).join("\n") }, "It printed 40 lines, ending with step 40."],
-      [{ exitCode: 0, output: "/Users/someone/projects/thing/build/output.bin\n" }, "It printed a long line."],
-      [{ exitCode: 1, output: 'Traceback (most recent call last):\n  File "a.py", line 3, in <module>\nNameError: name \'x\' is not defined\n' }, "It failed: NameError: name 'x' is not defined."],
-      [{ exitCode: 2, output: "x".repeat(300) }, "It failed, with exit code 2."],
-    ]
-    for (const [script, words] of cases) {
-      const { editor, controller } = setup({}, { confirmCommands: false })
-      editor.commandScript["go"] = { ms: 100, ...script }
-      const voice = new FakeVoice()
-      controller.setVoice(voice)
-      await controller.start()
-      await controller.step([{ do: [{ run: "go" }] }])
-      await until(controller.step([]))
-      expect(voice.spoken.at(-1)).toBe(words)
-      await until(controller.end())
-    }
-  })
-
   it("saves what the batch has typed before running a command, so the command reads it from disk", async () => {
     const { editor, controller } = setup({ "a.ts": "" }, { confirmCommands: false })
     await controller.start()
@@ -1638,9 +1598,8 @@ describe("run", () => {
     await controller.step([{ do: [{ run: "npm test" }] }])
     await until(controller.listen(), 5_000)
     const said = voice.spoken.length
-    expect(voice.spoken.at(-1)).toMatch(/^It ran/)
-    // The read-out fills the first seconds, and a quick answer needs no filler after it.
-    await advance(5_900)
+    // What the run printed is the agent's to talk about: the voice only fills a long think.
+    await advance(2_900)
     expect(voice.spoken.length).toBe(said)
     await advance(200)
     expect(voice.spoken.slice(said)).toHaveLength(1)
@@ -1666,7 +1625,7 @@ describe("run", () => {
     await controller.step([{ do: [{ run: "npm test" }] }])
     await until(controller.listen(), 5_000)
     voice.slowStart = true
-    await advance(6_100)
+    await advance(3_100)
     const filler = voice.spoken.at(-1)!
     await controller.step([{ say: "It passed." }])
     expect(voice.takenBack).toEqual([filler])
@@ -1814,5 +1773,216 @@ describe("changes by others, while batches are queued", () => {
     const first = await until(queued)
     const rest = await until(controller.step([]))
     expect([...first.batches, ...rest.batches].map((b) => b.status)).toEqual(["interrupted", "discarded"])
+  })
+})
+
+describe("stages", () => {
+  it("writes the author's stage into the editor, a changed line edited in place, and starts the next once it's in", async () => {
+    const { editor, controller, copy } = setup({ "a.ts": "let x = 1\nlet y = 2\n" })
+    await controller.start()
+    copy().write("a.ts", "let x = 10\nlet y = 2\nlet z = 3\n")
+    expect(await controller.stage("Numbers", "Bump x, add z.")).toMatchObject({ recorded: 1, playing: 1, stages: 1 })
+    const joined = await controller.join()
+    expect(joined.briefs).toEqual([{ number: 1, title: "Numbers", notes: "Bump x, add z." }])
+    expect(joined.stage).toEqual({
+      number: 1,
+      title: "Numbers",
+      of: 1,
+      left: [
+        {
+          file: "a.ts",
+          lines: [
+            { number: 1, text: "let x = 1", change: "remove" },
+            { text: "let x = 10", change: "write" },
+            { number: 2, text: "let y = 2" },
+            { text: "let z = 3", change: "write" },
+          ],
+        },
+      ],
+    })
+
+    await controller.step([{ say: "Bump x.", do: [{ write: { file: "a.ts", through: "let x = 10" } }] }])
+    await until(controller.step([]))
+    // Only the digit was typed: the line was edited, not deleted and typed again.
+    expect(editor.edits.map((e) => e.text).join("")).toBe("0")
+    expect(editor.text("a.ts")).toBe("let x = 10\nlet y = 2\n")
+
+    // The stage is reported as the queued batches will leave it: all written.
+    const submitted = await controller.step([{ do: [{ write: {} }] }])
+    expect(submitted.stage).toEqual({ number: 1, title: "Numbers", of: 1, left: [] })
+    await until(controller.step([]))
+    expect(editor.text("a.ts")).toBe("let x = 10\nlet y = 2\nlet z = 3\n")
+    // The stage's code is the author's already: it isn't carried back into its copy.
+    expect(copy().carried).toEqual([])
+
+    copy().write("a.ts", "let x = 10\nlet y = 20\nlet z = 3\n")
+    const second = await controller.stage("More", "Bump y.", true)
+    expect(second).toMatchObject({ recorded: 2, playing: 2, stages: 2 })
+    expect(second.events).toContainEqual({ kind: "caught_up", stage: 1 })
+    const next = await until(controller.step([]))
+    expect(next.briefs).toEqual([{ number: 2, title: "More", notes: "Bump y." }])
+    expect(next.stage).toMatchObject({ number: 2, of: 2, last: true })
+    await controller.step([{ do: [{ write: {} }] }])
+    await until(controller.step([]))
+    // Caught up with the last stage: the presenter wraps up, so the author isn't asked for more.
+    expect((await until(controller.wait())).events).toContainEqual({ kind: "caught_up", stage: 2, last: true })
+  })
+
+  it("hands back what an interrupted write left, and the rest finishes the half-typed line in place", async () => {
+    const { editor, controller, copy } = setup({ "a.ts": "" })
+    await controller.start()
+    copy().write("a.ts", "alpha\nbeta\n")
+    await controller.stage("Words", "")
+    await controller.join()
+    await controller.step([{ do: [{ write: { file: "a.ts" } }] }])
+    await advance(400)
+    controller.userInterrupt()
+    const interrupted = await until(controller.step([]))
+    const half = editor.text("a.ts")
+    expect(half).not.toBe("")
+    expect("alpha".startsWith(half) && half !== "alpha").toBe(true)
+    expect(interrupted.batches).toMatchObject([{ status: "interrupted", unplayed: [{ do: [{ write: { file: "a.ts" } }] }] }])
+
+    await controller.step([{ do: [{ write: { file: "a.ts" } }] }])
+    await until(controller.step([]))
+    expect(editor.text("a.ts")).toBe("alpha\nbeta\n")
+    // Nothing typed was taken out again.
+    expect(editor.edits.every((e) => e.deleteLength === 0)).toBe(true)
+  })
+
+  it("counts a line of the stage the programmer types as written, and drops one they delete", async () => {
+    const { editor, controller, copy } = setup({ "a.ts": "a\n" })
+    await controller.start()
+    copy().write("a.ts", "a\nb\nc\n")
+    await controller.stage("Letters", "")
+    await controller.join()
+    editor.userEdit("a.ts", 2, 0, "b\n")
+    const typed = await until(controller.step([]))
+    expect(typed.stage?.left).toEqual([{ file: "a.ts", lines: [{ number: 2, text: "b" }, { text: "c", change: "write" }] }])
+    editor.userEdit("a.ts", 2, 2, "")
+    const deleted = await until(controller.step([]))
+    expect(deleted.stage?.left).toEqual([{ file: "a.ts", lines: [{ number: 1, text: "a" }, { text: "c", change: "write" }] }])
+    await controller.step([{ do: [{ write: { file: "a.ts" } }] }])
+    await until(controller.step([]))
+    expect(editor.text("a.ts")).toBe("a\nc\n")
+  })
+
+  it("drops lines from the stage without touching the code", async () => {
+    const { editor, controller, copy } = setup({ "a.ts": "a\n" })
+    await controller.start()
+    copy().write("a.ts", "a\nb\nc\n")
+    await controller.stage("Letters", "")
+    await controller.join()
+    await controller.step([{ do: [{ drop: { file: "a.ts", from: "b", through: "b" } }, { write: { file: "a.ts" } }] }])
+    await until(controller.step([]))
+    expect(editor.text("a.ts")).toBe("a\nc\n")
+  })
+
+  it("writes the blank lines that end a stretch with the lines above them, so the next write starts on code", async () => {
+    const { editor, controller, copy } = setup({ "a.py": "def add(a, b):\n    return a + b\n\n\nprint(add(2, 3))\n" })
+    await controller.start()
+    copy().write("a.py", "def add(a, b):\n    return a + b\n\n\ndef sub(a, b):\n    return a - b\n\n\nprint(add(2, 3))\nprint(sub(5, 3))\n")
+    await controller.stage("Sub", "")
+    await controller.join()
+    const first = await controller.step([{ do: [{ write: { file: "a.py", through: "return a - b" } }] }])
+    expect(first.stage?.left).toEqual([{ file: "a.py", lines: [{ number: 9, text: "print(add(2, 3))" }, { text: "print(sub(5, 3))", change: "write" }] }])
+    await until(controller.step([{ do: [{ write: {} }] }]))
+    await until(controller.step([]))
+    expect(editor.text("a.py")).toBe("def add(a, b):\n    return a + b\n\n\ndef sub(a, b):\n    return a - b\n\n\nprint(add(2, 3))\nprint(sub(5, 3))\n")
+  })
+
+  it("returns from `listen` once the batches have played and the stage still has code to put in", async () => {
+    const { controller, copy } = setup({ "a.ts": "a\n" })
+    await controller.start()
+    copy().write("a.ts", "a\nb\n")
+    await controller.stage("B", "")
+    await controller.join()
+    // Only talk, sent with a `listen` in the same turn: the editor goes still while b is still to write.
+    await controller.step([{ say: "Next, b." }])
+    const listening = track(controller.listen())
+    await advance(2000)
+    expect(listening.done).toBe(true)
+    expect(listening.value!.batches).toMatchObject([{ status: "completed" }])
+    // The `listen` after waits for the programmer, say for the answer to a question.
+    const next = track(controller.listen())
+    await advance(5000)
+    expect(next.done).toBe(false)
+    controller.userMessage("go on")
+    await advance(10)
+    expect(next.done).toBe(true)
+  })
+
+  it("creates the files a stage adds and deletes the ones it removes", async () => {
+    const { editor, controller, copy } = setup({ "old.ts": "gone\n" })
+    await controller.start()
+    copy().write("new.ts", "hi\n")
+    copy().write("old.ts", undefined)
+    await controller.stage("Swap", "")
+    await controller.join()
+    await controller.step([{ do: [{ write: { file: "new.ts" } }] }])
+    const submitted = await until(controller.step([{ do: [{ write: { file: "old.ts" } }] }]))
+    expect(submitted.stage?.left).toEqual([])
+    await until(controller.step([]))
+    expect(editor.text("new.ts")).toBe("hi\n")
+    expect(editor.files.has(editor.resolvePath("old.ts"))).toBe(false)
+  })
+
+  it("keeps the programmer's version where they changed what the stage changes, and tells both of the author's", async () => {
+    const { editor, controller, copy } = setup({ "a.ts": "x = 1\n" })
+    await controller.start()
+    await controller.join()
+    editor.userEdit("a.ts", 4, 1, "5")
+    copy().write("a.ts", "x = 2\n")
+    const recorded = await controller.stage("Two", "")
+    const aside = { kind: "set_aside", file: "a.ts", stage: 1, plan: expect.stringContaining("x = 2"), kept: expect.stringContaining("x = 5") }
+    expect(recorded.events).toContainEqual(aside)
+    const report = await until(controller.step([]))
+    const { kind: _, ...told } = aside
+    expect(report.stage).toEqual({ number: 1, title: "Two", of: 1, left: [], set_aside: [told] })
+    expect(editor.text("a.ts")).toBe("x = 5\n")
+  })
+
+  it("carries the programmer's edits into the author's copy, and wakes a waiting author once they pause", async () => {
+    const { editor, controller, copy } = setup({ "a.ts": "one\n" })
+    await controller.start()
+    const waiting = track(controller.wait())
+    editor.userEdit("a.ts", 3, 0, " two")
+    await advance(500)
+    editor.userEdit("a.ts", 7, 0, " three")
+    await advance(900)
+    expect(waiting.done).toBe(false)
+    await advance(200)
+    expect(waiting.done).toBe(true)
+    expect(waiting.value?.events).toEqual([{ kind: "edit", file: "a.ts", diff: expect.stringContaining("+one two three"), by: "programmer", carried: true }])
+    expect(copy().files.get(editor.resolvePath("a.ts"))).toBe("one two three\n")
+  })
+
+  it("passes words between the author and the presenter, waking whichever waits", async () => {
+    const { controller } = setup({ "a.ts": "" })
+    await controller.start()
+    await controller.join()
+    const listening = track(controller.listen())
+    const told = await controller.tellPresenter("Stage 2 is coming.")
+    expect(told.events).toEqual([{ kind: "presenter", present: true }])
+    await advance(10)
+    expect(listening.value?.author).toEqual(["Stage 2 is coming."])
+    const waiting = track(controller.wait())
+    await advance(10)
+    expect(waiting.done).toBe(false)
+    controller.tellAuthor("They want tests too.")
+    await advance(10)
+    expect(waiting.value?.events).toEqual([{ kind: "told", text: "They want tests too." }])
+  })
+
+  it("keeps the prepared version to compare once the session ends, and removes the copy", async () => {
+    const { editor, panel, controller, copy } = setup({ "a.ts": "a\n" })
+    await controller.start()
+    copy().write("a.ts", "a\nb\n")
+    await controller.stage("B", "")
+    await until(controller.end())
+    await advance(10)
+    expect(controller.prepared).toEqual([{ file: editor.resolvePath("a.ts"), text: "a\nb\n" }])
+    expect(panel.events).toContainEqual({ type: "compare" })
+    expect(copy().disposed).toBe(true)
   })
 })

@@ -47,8 +47,9 @@ export function playedOnly<M>(messages: M[]): M[] {
         const call = pairCall(block)
         if (!call) continue
         pairCalls.add(call.id)
-        // Batch numbers are unique only while the editor runs; a new session may follow a reload.
-        if (call.tool === "start") batches.clear()
+        // Batch numbers are unique only while the editor runs, and a presenter's batches begin
+        // with its `join`; a new session may follow a reload.
+        if (call.tool === "join") batches.clear()
         if (call.tool === "step" && Array.isArray(call.args.beats)) steps.set(call.id, call.args.beats as Beat[])
       }
     } else if (message.role === "toolResult" && typeof message.toolCallId === "string" && pairCalls.has(message.toolCallId)) {

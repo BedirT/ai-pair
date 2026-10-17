@@ -48,7 +48,7 @@ describe("history", () => {
   it("cuts an interrupted step down to the beats that played, keeping the session's own messages as they were", () => {
     for (const device of [false, true]) {
       const messages = [
-        ...turn("start", {}, { ...quiet, voice: "off" }),
+        ...turn("join", {}, { ...quiet, voice: "off" }),
         ...turn("step", { beats: [greet, name] }, { ...quiet, submitted: { id: 1, status: "playing" } }, device),
         // Cut inside " there▌": the beat comes back as what's left of it, without its say.
         ...turn("listen", {}, { ...quiet, batches: [{ id: 1, status: "interrupted", unplayed: [{ do: [{ type: "ere▌" }] }, name] }] }),
@@ -63,10 +63,10 @@ describe("history", () => {
 
   it("empties a discarded step, and matches batch numbers within their own session", () => {
     const messages = [
-      ...turn("start", {}, quiet),
+      ...turn("join", {}, quiet),
       ...turn("step", { beats: [greet] }, { ...quiet, submitted: { id: 1, status: "playing" } }),
       ...turn("end", {}, { ...quiet, batches: [{ id: 1, status: "completed" }] }),
-      ...turn("start", {}, quiet),
+      ...turn("join", {}, quiet),
       ...turn("step", { beats: [name] }, { ...quiet, submitted: { id: 1, status: "queued" } }),
       ...turn("listen", {}, { ...quiet, batches: [{ id: 1, status: "discarded", unplayed: [name] }] }),
     ]
@@ -77,7 +77,7 @@ describe("history", () => {
 
   it("finds a step's batch in its own report when an interruption discarded it before it was queued", () => {
     const messages = [
-      ...turn("start", {}, quiet),
+      ...turn("join", {}, quiet),
       ...turn("step", { beats: [greet] }, { ...quiet, submitted: { id: 1, status: "playing" } }),
       // As seen live: the interruption lands while this step is still being checked, so its
       // report names its batch only among the finished ones, after the batch before it.
@@ -93,7 +93,7 @@ describe("history", () => {
 
   it("leaves a history where everything played as it is", () => {
     const messages = [
-      ...turn("start", {}, quiet),
+      ...turn("join", {}, quiet),
       ...turn("step", { beats: [greet] }, { ...quiet, submitted: { id: 1, status: "playing" } }),
       ...turn("listen", {}, { ...quiet, batches: [{ id: 1, status: "completed" }] }),
     ]
