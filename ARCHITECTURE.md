@@ -283,8 +283,12 @@ and only pauses between its sentences spread it over the typing.
 session speed from 1× up to 2×: slower sessions keep its natural pace and
 just pause more, and past 2× words blur. `aiPair.voice.rate` multiplies on
 top, and for Kokoro span fitting nudges each line; all together stays
-within 0.5× and 2×. Kokoro takes the pace as its `speed`; Chatterbox takes
-just the one pace, steady, as its playback rate.
+within 0.5× and 2×. Kokoro takes the pace as its `speed` up to 1.3×; past
+that it speeds up by giving each sound fewer frames, and short sounds run
+out of them and words smear. A faster line is made at 1.3× and its
+recording sped up the rest of the way at the same pitch, in the worker
+(`timeStretch.ts`, overlap-add with each window lined up on the one before).
+Chatterbox takes just the one pace, steady, as its playback rate.
 
 Either way, the extension
 puts each `say` the way a programmer says it out loud
