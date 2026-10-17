@@ -270,4 +270,6 @@ export class ToolError extends Error {
   }
 }
 
+export type SetAside = { file: string; stage: number; plan: string; kept: string }
+
 export * from "./wire"

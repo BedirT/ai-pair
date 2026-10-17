@@ -1,3 +1,4 @@
+export { createCopy } from "./copy"
 export { Controller, defaultConfig, type Config } from "./controller"
 export type {
   AgentState,
