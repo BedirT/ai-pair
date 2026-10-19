@@ -1,5 +1,5 @@
-// A scripted "agent" that plays the example session from AGENT_GUIDE.md through the real
-// protocol, for tuning how playback feels. It can't adapt, so it stops when interrupted.
+// A scripted presenter that types a todos API by hand through the real protocol, for tuning how
+// playback feels. It can't adapt, so it stops when interrupted.
 
 import * as path from "node:path"
 import * as vscode from "vscode"
@@ -18,7 +18,7 @@ app.use(express.json());
 app.listen(3000, () => console.log("Listening on http://localhost:3000"));
 `
 
-// Follows AGENT_GUIDE.md: left to right, with the close of whatever has one typed first, new lines
+// Follows PRESENTER_GUIDE.md's typing: left to right, with the close of whatever has one typed first, new lines
 // started at the end of the line above, and each beat's words played over the code they're about.
 export const SCRIPT: Beat[][] = [
   [{ say: "Okay, let me see how the app's set up first.", do: [{ move: { file: SERVER, line: 1, at: "▌import express" } }] }],
@@ -209,6 +209,8 @@ export async function playDemo(controller: Controller, root: string): Promise<vo
 
   try {
     await controller.start("Demo: add a todos API to an Express app")
+    // The demo drives the presenter, whose first report, with the stages so far, comes from joining.
+    await controller.join()
     const current = {}
     for (const batch of SCRIPT) {
       const report = await stepScript(controller, batch, current)

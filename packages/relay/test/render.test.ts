@@ -180,9 +180,9 @@ describe("saving", () => {
 })
 
 describe("modes", () => {
-  it("names the session's mode in the start report and points at its page", () => {
-    expect(renderReport(report({ mode: "build" }), "start")).toMatch(/Build mode/)
-    const learn = renderReport(report({ mode: "learn", drive: "together" }), "start")
+  it("names the session's mode in the join report and points at its page", () => {
+    expect(renderReport(report({ mode: "build" }), "join")).toMatch(/Build mode/)
+    const learn = renderReport(report({ mode: "learn", drive: "together" }), "join")
     expect(learn).toMatch(/Learn mode/)
     // The mode refines the guide, so the agent is told which wins.
     expect(learn).toMatch(/mode page wins/)

@@ -85,14 +85,15 @@ account. While you pair:
 |---|---|
 | say something to the agent | type in the reply box, press Enter. Typing pauses playback. |
 | ask about some code | select it in the editor, then reply: the selection goes along (× leaves it out) |
-| let it run a command       | the agent's tests and builds play in an _AI Pair_ terminal; **Run**, **Allow _npm_** (that program), **Allow all**, or **Skip** in the panel |
-| stop it right now          | **Interrupt**, or just edit the code: any edit interrupts. The agent is told at once, and the panel says so until it takes it in             |
+| let it run a command        | the agent's tests and builds play in an _AI Pair_ terminal; **Run**, **Allow _npm_** (that program), **Allow all**, or **Skip** in the panel |
+| stop it right now           | **Interrupt**, or just edit the code: any edit interrupts. The agent is told at once, and the panel says so until it takes it in             |
 | look around | scroll or switch files. Playback pauses until you **Resume**, which brings you back to the agent's cursor |
 | write a part yourself | **My turn**. The agent becomes the navigator and comments as you type. **Hand back** returns the turn, with your reply if you typed one |
-| change the pace            | the speed menu (**1.0×**), from 0.4× to 3.0×. The voice speeds up with it, up to 2×                                                          |
-| hear it, not read it       | turn **Voice** on in the panel. It talks while it types, so your eyes stay on the code; the words still land in the history                  |
-| hear it type               | turn **Key sounds** on. Its keystrokes sound like a mechanical keyboard, kept well under the voice; the arrow beside it picks the keyboard   |
+| change the pace             | the speed menu (**1.0×**), from 0.4× to 3.0×. The voice speeds up with it, up to 2×                                                          |
+| hear it, not read it        | turn **Voice** on in the panel. It talks while it types, so your eyes stay on the code; the words still land in the history                  |
+| hear it type                | turn **Key sounds** on. Its keystrokes sound like a mechanical keyboard, kept well under the voice; the arrow beside it picks the keyboard   |
 | finish | **End**, or tell the agent you're done. You can pair again anytime |
+| see what changed on the way | after the session, **Compare with prepared** in the panel: the agent's prepared version beside the final code                                |
 
 The cursor's color tells you what the agent is doing. It's yellow and pulsing
 when it's just said something and is waiting for you to read it — or, with the
@@ -145,18 +146,28 @@ session that adds a small API to an Express app, which it creates in
 agent (Claude Code, …) ── stdio MCP ──▶ pair-mcp ── local WebSocket ──▶ VS Code extension
 ```
 
-The agent submits small batches of actions: say, move, select, type, delete,
-point, run. The extension plays them at a human pace and reports back exactly
-what happened, including everything you did in the meantime. The agent writes
-its next batches while you watch the current one, up to about 30 seconds of
-playback ahead, which hides its thinking time. That cap is kept short on
-purpose: when you step in, what it wrote ahead is thrown away, and your
-interruption lands right away.
+Your agent does the real work first, at its own pace, in a private copy of
+your project, and records it in **stages**: small steps that each run on
+their own, with notes on why. A presenter, usually a subagent it starts on
+the same model with thinking off, plays each stage in your editor while the
+agent works on the next,
+so playback almost never waits on its thinking. Your edits always stand:
+both treat them as yours, build on them, and never undo them. The presenter
+handles small requests itself and passes bigger ones to the agent.
+
+The presenter submits small batches of actions: say, move, select, type,
+delete, point, run, and write the next lines of the stage. The extension
+plays them at a human pace and reports back exactly what happened, including
+everything you did in the meantime. It writes its next batches while you
+watch the current one, up to about 30 seconds of playback ahead. That cap is
+kept short on purpose: when you step in, what it wrote ahead is thrown away,
+and your interruption lands right away.
 
 The design is written up in:
 
 - [PROTOCOL.md](PROTOCOL.md): the tools and their exact semantics, as the agent sees them.
-- [AGENT_GUIDE.md](AGENT_GUIDE.md): how the agent should pair, returned to it when a session starts.
+- [AUTHOR_GUIDE.md](AUTHOR_GUIDE.md): how the agent works ahead and records stages, returned to it when a session starts.
+- [PRESENTER_GUIDE.md](PRESENTER_GUIDE.md): how the presenter plays the stages and pairs, returned to it when it joins.
 - [DESIGN.md](DESIGN.md): what you see: the cursor, the panel, the timing.
 - [ARCHITECTURE.md](ARCHITECTURE.md): the components and how they connect.
 
