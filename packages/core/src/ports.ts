@@ -97,6 +97,8 @@ export type PanelEvent =
       /** `exited`: a command left running in the background has ended since. */
       phase: "confirm" | "running" | "done" | "declined" | "background" | "exited"
       exitCode?: number
+      /** With `confirm`: the program the command runs, which the programmer can allow for the session. */
+      program?: string
     }
 
 export interface PanelPort {

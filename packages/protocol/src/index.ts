@@ -233,6 +233,14 @@ export type Report = {
   paused?: true
   /** A batch's `run` held until the programmer allows it: nothing after it plays until they answer. */
   confirming?: { id: number; command: string }
+  /**
+   * The pairing mode the programmer picked for this session, fixed once it starts: in the
+   * session's first report only. "learn" comes with `drive`: who does the work while learning.
+   */
+  mode?: "build" | "learn"
+  /** With mode "learn": show = the agent drives and teaches, together = worked examples then the
+   *  programmer tries the next one like it, try = the programmer drives, the agent navigates. */
+  drive?: "show" | "together" | "try"
 }
 
 export type FileContent = {

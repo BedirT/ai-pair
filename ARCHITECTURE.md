@@ -167,10 +167,14 @@ files are in [`agents.ts`](packages/vscode/src/agents.ts). OMP's entry
 carries `timeout: 0`, since pair calls block while the
 programmer watches and replies, far past OMP's 30-second MCP default.
 
-**Each session.** The programmer asks the agent to pair ("let's pair on adding
-a todos API, I'm new to Express"), or runs the server's `start` prompt (in
-Claude Code: `/mcp__pair__start`). The agent calls `start`, which returns the
-[agent guide](AGENT_GUIDE.md) along with the first report.
+**Each session.** The programmer picks the session's pairing mode beside
+the panel's Start button (Build, or Learn at three splits of who does the
+work; remembered, and fixed once a session starts), asks the agent to pair
+("let's pair on adding a todos API, I'm new to Express"), or runs the
+server's `start` prompt (in Claude Code: `/mcp__pair__start`). The agent
+calls `start`, which returns the [agent guide](AGENT_GUIDE.md) and the
+mode's page (`modeGuide.ts` in the relay, from the mode in the first
+report) along with the first report.
 
 **An agent, from the editor.** The panel's **Start** (or _AI Pair: Start
 Agent_) sets the pair server up in the chosen agent if it isn't, then

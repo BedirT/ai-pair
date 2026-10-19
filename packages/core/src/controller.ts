@@ -5,7 +5,7 @@ import type { Beat, BatchResult, Event, Excerpt, FileContent, Report, Turn } fro
 import { CURSOR_MARKER, ToolError } from "@ai-pair/protocol"
 import { fileDiff } from "./diff"
 import { LineIds, type Sighting } from "./lines"
-import { agentPath, displayPath, Player, type Scene } from "./player"
+import { agentPath, displayPath, Player, programOf, type Scene } from "./player"
 import type { AgentState, Change, CursorView, EditorPort, PanelPort, Ref, SharedSelection } from "./ports"
 import { followChange, rehearse, type Rehearsal } from "./rehearsal"
 import { fileLines } from "./text"
@@ -119,6 +119,8 @@ export class Controller {
   private nextBatchId = 1
   private pauseReasons = new Set<string>()
   private speed = 1
+  /** The mode the next session runs in; fixed for a session once it starts. */
+  private mode: { kind: "build" | "learn"; drive?: "show" | "together" | "try" } = { kind: "build" }
   private lastPosted = ""
 
   constructor(
@@ -143,7 +145,7 @@ export class Controller {
         point: null,
         focus: "cursor",
         pointFar: false,
-        allowedCommands: new Set(),
+        allowed: { all: false, programs: new Set() },
       }
       const timeline = new Timeline(this.pauseReasons.size > 0)
       const lines = LineIds.editor()
@@ -177,7 +179,8 @@ export class Controller {
       this.lastPosted = ""
       this.panel.post({ type: "session", active: true, task })
       this.render()
-      return { batches: [], events: [], turn: scene.turn }
+      // The mode governs how the whole session pairs, so the agent is told it from the start.
+      return { batches: [], events: [], turn: scene.turn, mode: this.mode.kind, ...(this.mode.drive ? { drive: this.mode.drive } : {}) }
     })
   }
 
@@ -422,6 +425,11 @@ export class Controller {
     this.speed = speed
   }
 
+  /** How the next session pairs: build it, or learn it (with who does the work). A session that's
+   *  already running keeps the mode it started in. */
+  setMode(kind: "build" | "learn", drive?: "show" | "together" | "try"): void {
+    this.mode = { kind, ...(kind === "learn" ? { drive: drive ?? "show" } : {}) }
+  }
 
   setConfirmCommands(confirm: boolean): void {
     this.config = { ...this.config, confirmCommands: confirm }
@@ -434,14 +442,16 @@ export class Controller {
   }
 
   /**
-   * The programmer's answer to a `run` waiting for confirmation. `remember`: run exactly this
-   * command without asking for the rest of the session.
+   * The programmer's answer to a `run` waiting for confirmation. `allow`: for the rest of the
+   * session, run without asking every command of this one's program, or every command.
    */
-  decideRun(id: number, run: boolean, remember = false): void {
+  decideRun(id: number, run: boolean, allow?: "program" | "all"): void {
     const s = this.session
     const c = s?.confirming
     if (c?.id !== id) return
-    if (run && remember) s!.scene.allowedCommands.add(c.command)
+    const program = programOf(c.command)
+    if (run && allow === "all") s!.scene.allowed.all = true
+    else if (run && allow === "program" && program !== undefined) s!.scene.allowed.programs.add(program)
     c.decide(run)
   }
 

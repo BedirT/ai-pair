@@ -175,7 +175,14 @@ Fails if a session is already active in that window, or if no editor window
 has the project open.
 
 Besides the report, the result includes the [agent guide](AGENT_GUIDE.md),
-which the agent follows for the whole session.
+which the agent follows for the whole session, and the session's mode page.
+
+Before a session, the programmer picks its **pairing mode** in the panel:
+`build` (get it done, shown as it goes) or `learn` (teach it: one small
+idea at a time), and for `learn`, who does the work (`drive`: the agent
+shows, the two share it, or the programmer drives). The mode is fixed for
+the session and told in the `start` report; its page rides with the guide
+and wins where the two differ.
 
 File paths given to and returned by all tools are relative to the agent's
 working directory (absolute paths work too).
@@ -537,6 +544,8 @@ type Report = {
   paused?: true; // playback is paused in the editor: batches are held until the programmer resumes
   stillMs?: number; // step only: the editor sat still this long, the queue dry, before this batch came
   confirming?: { id: number; command: string }; // a `run` waiting for the programmer to allow it
+  mode?: "build" | "learn"; // the session's pairing mode; in the `start` report only
+  drive?: "show" | "together" | "try"; // with mode `learn`: who does the work
 }
 
 type BatchResult = {

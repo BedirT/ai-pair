@@ -19,6 +19,12 @@ const ICONS = {
   exit: svg('<path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h11"/>'),
   send: svg('<path d="M4 12l16-8-6 16-2.5-6.5z"/>'),
   play: svg('<path d="M8 5l11 7-11 7z"/>'),
+  chevron: svg('<path d="M7 10l5 5 5-5"/>', "chevron"),
+  // The pairing modes: bricks going up, an eye watching, two people, a pencil in your own hand.
+  build: svg('<rect x="3" y="13" width="8" height="7" rx="1"/><rect x="13" y="13" width="8" height="7" rx="1"/><rect x="8" y="4" width="8" height="7" rx="1"/>'),
+  show: svg('<path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+  together: svg('<circle cx="9" cy="8" r="3.5"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><path d="M15.5 4.9a3.5 3.5 0 010 6.2M21 20c-.2-2.6-1.7-4.4-4-5.1"/>'),
+  pencil: svg('<path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 013 3L8 19z"/><path d="M14.5 6.5l3 3"/>'),
 }
 
 export function panelHtml(cspSource: string): string {
@@ -98,11 +104,19 @@ export function panelHtml(cspSource: string): string {
   /* Room for the header and two lines of message, so the reply box stays still for short messages. */
   body.active #main { min-height: calc(32px + 2 * 1.5 * 1.3 * var(--vscode-editor-font-size, 13px)); box-sizing: border-box; }
 
-  #head { display: flex; align-items: center; gap: 4px; height: 24px; }
+  /* The status keeps a line's worth of room; when the buttons won't fit beside it, they drop to
+     a line of their own (right-aligned, wrapping again if even that is too narrow) instead of
+     sliding over it. */
+  #head { display: flex; align-items: center; flex-wrap: wrap; column-gap: 8px; row-gap: 6px; min-height: 24px; }
   /* Without a session, the title under it says it all. */
   body:not(.active) #head { display: none; }
-  #status { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; font-size: 12px; }
-  #status-text { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #status { display: flex; align-items: center; gap: 12px; flex: 1 1 210px; min-width: 0; height: 24px; font-size: 12px; }
+  #status-text { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  /* The session's pairing mode, its icon and word quiet beside the status: picked per session, fixed
+     once it runs. Squeezed, its word gives way before the status's. */
+  #mode-label { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); white-space: nowrap; min-width: 13px; overflow: hidden; flex-shrink: 100; }
+  #mode-word { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #mode-label .i { width: 13px; height: 13px; }
   .dot { position: relative; width: 7px; height: 7px; margin-left: 4px; border-radius: 50%; background: var(--accent); flex: none; }
   .dot.read { background: var(--read); animation: breathe 2.4s ease-in-out infinite; }
   .dot.dim { opacity: 0.45; }
@@ -119,7 +133,7 @@ export function panelHtml(cspSource: string): string {
     mask: radial-gradient(circle, transparent 6px, #000 6.5px);
   }
 
-  #controls { display: none; align-items: center; gap: 1px; }
+  #controls { display: none; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 1px; margin-left: auto; max-width: 100%; }
   body.active #controls { display: flex; }
   #pause .resume, body.paused #pause .pause { display: none; }
   body.paused #pause .resume { display: block; }
@@ -130,17 +144,28 @@ export function panelHtml(cspSource: string): string {
   #end { margin-left: 2px; }
   #speed-wrap { position: relative; }
   #speed { font-variant-numeric: tabular-nums; }
-  #speed-menu {
+  :is(#speed-menu, #mode-menu) {
     position: absolute; right: 0; top: 28px; z-index: 10; padding: 4px; border-radius: 6px;
     display: flex; flex-direction: column; background: var(--vscode-menu-background, var(--surface));
     color: var(--vscode-menu-foreground, var(--fg));
     border: 1px solid var(--vscode-menu-border, var(--border));
     box-shadow: 0 4px 14px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.18));
+    max-width: calc(100vw - 20px);
   }
-  #speed-menu[hidden] { display: none; }
-  #speed-menu button { justify-content: flex-start; height: 24px; padding: 0 8px; color: inherit; font-variant-numeric: tabular-nums; }
-  #speed-menu button[aria-checked="true"] { background: var(--soft-hover); }
-  #speed-menu button:hover { background: var(--vscode-menu-selectionBackground, var(--soft)); color: var(--vscode-menu-selectionForeground, inherit); }
+  :is(#speed-menu, #mode-menu)[hidden] { display: none; }
+  :is(#speed-menu, #mode-menu) button { justify-content: flex-start; height: 24px; padding: 0 8px; color: inherit; text-align: left; }
+  #speed-menu button { font-variant-numeric: tabular-nums; }
+  :is(#speed-menu, #mode-menu) button[aria-checked="true"] { background: var(--soft-hover); }
+  :is(#speed-menu, #mode-menu) button:hover { background: var(--vscode-menu-selectionBackground, var(--soft)); color: var(--vscode-menu-selectionForeground, inherit); }
+  /* The pairing mode: one button showing the active mode's icon; its menu opens here, in the panel. */
+  #mode-wrap { position: relative; }
+  #mode-btn { box-shadow: inset 0 0 0 1px var(--hair); padding: 0 7px; }
+  #mode-btn:hover, #mode-btn.on { background: var(--vscode-toolbar-hoverBackground, var(--soft)); }
+  #mode-current { display: inline-flex; }
+  #mode-menu { left: 0; right: auto; min-width: 232px; }
+  #mode-menu button { height: auto; padding: 5px 8px; }
+  .mode-text { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; }
+  .mode-desc { font-size: 11px; color: color-mix(in srgb, currentColor 62%, transparent); }
 
   #now { display: none; margin-top: 8px; }
   body.active #now { display: block; }
@@ -159,7 +184,14 @@ export function panelHtml(cspSource: string): string {
   #run-cmd::before { content: "$ "; color: var(--muted); }
   #run-actions { display: none; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   #run.confirm #run-actions { display: flex; }
+  /* Nothing plays until the programmer answers, so the question can't sit there unseen. */
+  #run.confirm { padding: 10px; border-radius: 8px; animation: ask 1.6s ease-in-out infinite; }
+  @keyframes ask {
+    0%, 100% { box-shadow: 0 0 0 1.5px var(--read); }
+    50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--read) 35%, transparent); }
+  }
   #run-actions button { height: 26px; padding: 0 8px; }
+  #run-actions button[hidden] { display: none; }
 
   body.active #idle { display: none; }
   #idle-title { font-size: 15px; font-weight: 600; }
@@ -167,7 +199,7 @@ export function panelHtml(cspSource: string): string {
   #idle-summary:empty { display: none; }
   #idle-text { margin-top: 4px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 
-  /* Starting an agent: one play button; which agent it runs is a command away. */
+  /* Starting an agent: one play button, and the mode beside it; which agent it runs is a command away. */
   #agent-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   #agent-start { height: 26px; padding: 0 10px; }
 
@@ -238,7 +270,7 @@ export function panelHtml(cspSource: string): string {
   #tip[hidden] { display: none; }
 
   @media (prefers-reduced-motion: reduce) {
-    .dot.read, .dot.think, .arrive { animation: none; }
+    .dot.read, .dot.think, .arrive, #run.confirm { animation: none; }
   }
 </style>
 </head>
@@ -247,7 +279,7 @@ export function panelHtml(cspSource: string): string {
   <section id="band">
     <div id="main">
       <div id="head">
-        <div id="status"><span id="dot" class="dot off"></span><span id="status-text">No session</span></div>
+        <div id="status"><span id="dot" class="dot off"></span><span id="status-text">No session</span><span id="mode-label"><span id="mode-icon"></span><span id="mode-word"></span></span></div>
         <div id="controls">
           <button id="pause" class="quiet" aria-label="Pause" data-tip="Pause (Space)" aria-keyshortcuts="Space">${ICONS.pause}${ICONS.resume}</button>
           <button id="interrupt" class="quiet" aria-label="Interrupt" data-tip="Interrupt">${ICONS.stop}</button>
@@ -267,7 +299,8 @@ export function panelHtml(cspSource: string): string {
           <div id="run-cmd"></div>
           <div id="run-actions">
             <button id="run-go" class="primary">${ICONS.play}<span>Run</span></button>
-            <button id="run-always" class="soft" data-tip="Run it, and run exactly this command without asking until the session ends">Allow for session</button>
+            <button id="run-program" class="soft"></button>
+            <button id="run-all" class="soft" data-tip="Run it, and every command after it without asking until the session ends">Allow all</button>
             <button id="run-skip" class="quiet">Skip</button>
           </div>
         </div>
@@ -278,6 +311,15 @@ export function panelHtml(cspSource: string): string {
         <div id="idle-text">Start your agent in a terminal here, ask one you already run to pair with you, or run <a class="command" data-command="aiPair.playDemo">AI Pair: Play Demo Session</a>. First time? Run <a class="command" data-command="aiPair.setUpAgent">AI Pair: Set Up Agent</a>.</div>
         <div id="agent-bar">
           <button id="agent-start" class="primary" aria-label="Start agent" data-tip="Start your agent in a free terminal standing here, or a new one. Which agent Start runs: AI Pair: Choose Agent to Start">${ICONS.play}</button>
+          <div id="mode-wrap">
+            <button id="mode-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Pairing mode: Build" data-tip="Pairing mode: Build. Click to choose"><span id="mode-current">${ICONS.build}</span>${ICONS.chevron}</button>
+            <div id="mode-menu" role="menu" aria-label="Pairing mode" hidden>
+              <button role="menuitemradio" aria-checked="true" data-mode="build" aria-label="Build">${ICONS.build}<span class="mode-text"><span>Build</span><span class="mode-desc">Get it done; show me as you go</span></span></button>
+              <button role="menuitemradio" aria-checked="false" data-mode="learn-show" aria-label="Learn: Show me">${ICONS.show}<span class="mode-text"><span>Learn · Show me</span><span class="mode-desc">The agent drives and teaches</span></span></button>
+              <button role="menuitemradio" aria-checked="false" data-mode="learn-together" aria-label="Learn: Together">${ICONS.together}<span class="mode-text"><span>Learn · Together</span><span class="mode-desc">A worked example, then you try the next one like it</span></span></button>
+              <button role="menuitemradio" aria-checked="false" data-mode="learn-try" aria-label="Learn: Let me try">${ICONS.pencil}<span class="mode-text"><span>Learn · Let me try</span><span class="mode-desc">You drive; the agent navigates</span></span></button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -302,8 +344,9 @@ export function panelHtml(cspSource: string): string {
     now: $("now-text"), ref: $("now-ref"),
     idle: $("idle"), idleTitle: $("idle-title"), idleSummary: $("idle-summary"), idleText: $("idle-text"),
     agentStart: $("agent-start"),
+    modeBtn: $("mode-btn"), modeMenu: $("mode-menu"), modeCurrent: $("mode-current"), modeIcon: $("mode-icon"), modeWord: $("mode-word"),
     reply: $("reply"), send: $("send"), attach: $("attach"), attachRef: $("attach-ref"), attachX: $("attach-x"),
-    run: $("run"), runLabel: $("run-label"), runCmd: $("run-cmd"), runGo: $("run-go"), runAlways: $("run-always"), runSkip: $("run-skip"),
+    run: $("run"), runLabel: $("run-label"), runCmd: $("run-cmd"), runGo: $("run-go"), runProgram: $("run-program"), runAll: $("run-all"), runSkip: $("run-skip"),
     history: $("history"), tip: $("tip"),
   };
   /** What the panel says with nothing going on. */
@@ -498,7 +541,7 @@ export function panelHtml(cspSource: string): string {
     if (!on) {
       reading = null;
       runId = null; runConfirming = false; ui.run.className = "";
-      closeSpeedMenu();
+      closeMenus();
     } else {
       ui.reply.placeholder = turn === "user" ? "Ask the agent…" : "Reply to the agent…";
     }
@@ -506,6 +549,27 @@ export function panelHtml(cspSource: string): string {
     syncAttach();
     syncTip();
   }
+
+  // The picked mode is the icon on its button beside Start and, while a session runs, icon and
+  // word beside the status. Its menu row carries the check.
+  function setModeChoice(e) {
+    let chosen;
+    for (const b of ui.modeMenu.querySelectorAll("button")) {
+      b.setAttribute("aria-checked", String(b.dataset.mode === e.id));
+      if (b.dataset.mode === e.id) chosen = b;
+    }
+    ui.modeWord.textContent = e.label;
+    const icon = chosen?.querySelector("svg");
+    if (icon) {
+      ui.modeCurrent.replaceChildren(icon.cloneNode(true));
+      ui.modeIcon.replaceChildren(icon.cloneNode(true));
+    }
+    const name = chosen?.getAttribute("aria-label") ?? e.label;
+    ui.modeBtn.setAttribute("aria-label", "Pairing mode: " + name);
+    setTip(ui.modeBtn, "Pairing mode: " + name + ". Click to choose");
+    syncTip();
+  }
+
 
   function handle(e) {
     switch (e.type) {
@@ -563,6 +627,12 @@ export function panelHtml(cspSource: string): string {
           ui.run.className = "on" + (runConfirming ? " confirm" : "");
           ui.runLabel.textContent = runConfirming ? "Allow this command in the terminal?" : "Running in the terminal…";
           ui.runCmd.textContent = e.command;
+          // Only a plain command has a program to allow: chained or piped ones could run anything.
+          ui.runProgram.hidden = !e.program;
+          if (e.program) {
+            ui.runProgram.textContent = "Allow " + e.program;
+            ui.runProgram.dataset.tip = "Run it, and every " + e.program + " command without asking until the session ends";
+          }
           syncStatus();
           if (runConfirming) arrive(ui.run);
           return;
@@ -583,6 +653,9 @@ export function panelHtml(cspSource: string): string {
         syncAttach();
         return;
       case "focusReply": ui.reply.focus(); return;
+      case "modeChoice": setModeChoice(e); return;
+      case "openMenu": if (!document.body.classList.contains("active")) menuCtl[e.menu]?.open(); return;
+
       case "speed": {
         // One decimal, so the menu's speeds line up; a setting with more keeps them.
         const label = (Number.isInteger(e.value * 10) ? e.value.toFixed(1) : String(e.value)) + "×";
@@ -641,31 +714,62 @@ export function panelHtml(cspSource: string): string {
     vscode.postMessage({ type: "turn", ...(message ? { message } : {}), ...(attach ? { attach } : {}) });
   };
   ui.attachX.onclick = () => { selectionDismissed = true; syncAttach(); };
-  const decide = (run, remember) => { if (runId !== null) vscode.postMessage({ type: "runDecision", id: runId, run, remember }); };
-  ui.runGo.onclick = () => decide(true, false);
+  const decide = (run, allow) => { if (runId !== null) vscode.postMessage({ type: "runDecision", id: runId, run, allow }); };
+  ui.runGo.onclick = () => decide(true);
   ui.agentStart.onclick = () => vscode.postMessage({ type: "agentStart" });
-  ui.runAlways.onclick = () => decide(true, true);
-  ui.runSkip.onclick = () => decide(false, false);
+
+  ui.runProgram.onclick = () => decide(true, "program");
+  ui.runAll.onclick = () => decide(true, "all");
+  ui.runSkip.onclick = () => decide(false);
   ui.end.onclick = () => vscode.postMessage({ type: "end" });
 
-  function closeSpeedMenu() {
-    ui.speedMenu.hidden = true;
-    ui.speed.setAttribute("aria-expanded", "false");
-    ui.speed.classList.remove("on");
+  // Small menus that open here in the panel (speed, mode): one button each, one
+  // open at a time, and each shifted back inside when it would run off the panel's edge.
+  const menus = [];
+  function placeMenu(menu) {
+    menu.style.transform = "";
+    const r = menu.getBoundingClientRect(), w = document.documentElement.clientWidth;
+    let dx = 0;
+    if (r.right > w - 6) dx = w - 6 - r.right;
+    if (r.left + dx < 6) dx = 6 - r.left;
+    if (dx) menu.style.transform = "translateX(" + dx + "px)";
   }
-  ui.speed.onclick = (e) => {
-    e.stopPropagation();
-    const open = ui.speedMenu.hidden;
-    ui.speedMenu.hidden = !open;
-    ui.speed.setAttribute("aria-expanded", String(open));
-    ui.speed.classList.toggle("on", open);
-    if (open) ui.speedMenu.querySelector('[aria-checked="true"]')?.focus();
-  };
-  for (const b of ui.speedMenu.querySelectorAll("button")) {
-    b.onclick = () => { closeSpeedMenu(); ui.speed.focus(); vscode.postMessage({ type: "speed", value: Number(b.dataset.speed) }); };
+  function wireMenu(btn, menu, pick) {
+    const ctl = {
+      btn, menu,
+      close() { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); btn.classList.remove("on"); },
+      open() {
+        for (const m of menus) if (m !== ctl) m.close();
+        menu.hidden = false;
+        placeMenu(menu);
+        btn.setAttribute("aria-expanded", "true");
+        btn.classList.add("on");
+        menu.querySelector('[aria-checked="true"]')?.focus();
+      },
+    };
+    menus.push(ctl);
+    btn.onclick = (e) => { e.stopPropagation(); if (menu.hidden) ctl.open(); else ctl.close(); };
+    menu.addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      ctl.close();
+      btn.focus();
+      pick(b);
+    });
+    return ctl;
   }
-  document.addEventListener("click", (e) => { if (!ui.speedMenu.hidden && !ui.speedMenu.contains(e.target)) closeSpeedMenu(); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !ui.speedMenu.hidden) { closeSpeedMenu(); ui.speed.focus(); } });
+  function closeMenus() { for (const m of menus) m.close(); }
+  document.addEventListener("click", (e) => {
+    for (const m of menus) if (!m.menu.hidden && !m.menu.contains(e.target)) m.close();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    for (const m of menus) if (!m.menu.hidden) { m.close(); m.btn.focus(); }
+  });
+
+  wireMenu(ui.speed, ui.speedMenu, (b) => vscode.postMessage({ type: "speed", value: Number(b.dataset.speed) }));
+  const modeCtl = wireMenu(ui.modeBtn, ui.modeMenu, (b) => vscode.postMessage({ type: "modeSet", id: b.dataset.mode }));
+  const menuCtl = { mode: modeCtl };
 
   // Tooltips: an element's data-tip shows under it after a moment's hover, or at once while one is
   // showing or just was, the way VS Code's own hovers do; and on keyboard focus. A click hides it.
@@ -679,7 +783,7 @@ export function panelHtml(cspSource: string): string {
 
   function showTip(el) {
     clearTimeout(tipTimer);
-    if (el === ui.speed && !ui.speedMenu.hidden) return;
+    if (menus.some((m) => m.btn === el && !m.menu.hidden)) return;
     tipTarget = el;
     ui.tip.textContent = el.dataset.tip;
     ui.tip.hidden = false;

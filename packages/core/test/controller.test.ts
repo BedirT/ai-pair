@@ -141,6 +141,21 @@ describe("timing", () => {
     expect(editor.text("a.ts")).toBe("abc")
   })
 
+  it("tells the agent the pairing mode when the session starts, and not again", async () => {
+    const { controller } = setup({ "a.ts": "" })
+    expect((await controller.start()).mode).toBe("build")
+    const next = await until(controller.step([]))
+    expect(next.mode).toBeUndefined()
+    await controller.end()
+    controller.setMode("learn", "together")
+    const start = await controller.start()
+    expect(start.mode).toBe("learn")
+    expect(start.drive).toBe("together")
+    // Picking another mode mid-session doesn't leak into the running one: it's told only at start.
+    controller.setMode("build")
+    expect((await until(controller.step([]))).mode).toBeUndefined()
+  })
+
   it("pauses after a move, longer when the move is far", async () => {
     const lines = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join("\n")
     const { controller } = setup(
@@ -1329,29 +1344,55 @@ describe("run", () => {
     expect(editor.commands).toEqual([])
   })
 
-  it("runs a command allowed for the session without asking again, until the session ends", async () => {
+  it("runs a program's commands without asking once the programmer allows it, until the session ends", async () => {
     const { editor, panel, controller } = setup()
     const confirms = () => panel.events.filter((e) => e.type === "run" && e.phase === "confirm")
-    const allow = (remember: boolean) => {
+    const allow = (scope?: "program" | "all") => {
       const last = confirms().at(-1)!
-      controller.decideRun(last.type === "run" ? last.id : -1, true, remember)
+      controller.decideRun(last.type === "run" ? last.id : -1, true, scope)
     }
     await controller.start()
     await controller.step([{ do: [{ run: "npm test" }] }])
     await advance(10)
-    allow(true)
-    await until(controller.step([{ do: [{ run: "npm test" }] }]))
+    expect(confirms().at(-1)).toMatchObject({ program: "npm" })
+    allow("program")
     await until(controller.step([{ do: [{ run: "npm run build" }] }]))
+    // Another program, or more than one command, still asks: allowing `npm` mustn't let `rm` through.
+    await until(controller.step([{ do: [{ run: "npm test && rm -rf build" }] }]))
     expect(confirms()).toHaveLength(2)
-    allow(false)
+    expect(confirms().at(-1)).not.toHaveProperty("program")
+    allow("program")
+    await until(controller.step([{ do: [{ run: "python3 main.py" }] }]))
+    expect(confirms()).toHaveLength(3)
+    allow()
     await until(controller.step([]))
-    expect(editor.commands.map((c) => c.command)).toEqual(["npm test", "npm test", "npm run build"])
+    expect(editor.commands.map((c) => c.command)).toEqual(["npm test", "npm run build", "npm test && rm -rf build", "python3 main.py"])
 
     await until(controller.end())
     await controller.start()
     await controller.step([{ do: [{ run: "npm test" }] }])
     await advance(10)
-    expect(confirms()).toHaveLength(3)
+    expect(confirms()).toHaveLength(4)
+  })
+
+  it("runs every command without asking once the programmer allows all, until the session ends", async () => {
+    const { editor, panel, controller } = setup()
+    const confirms = () => panel.events.filter((e) => e.type === "run" && e.phase === "confirm")
+    await controller.start()
+    await controller.step([{ do: [{ run: "npm test" }] }])
+    await advance(10)
+    const first = confirms()[0]!
+    controller.decideRun(first.type === "run" ? first.id : -1, true, "all")
+    await until(controller.step([{ do: [{ run: "python3 main.py" }, { run: "make | tee log" }] }]))
+    await until(controller.step([]))
+    expect(confirms()).toHaveLength(1)
+    expect(editor.commands.map((c) => c.command)).toEqual(["npm test", "python3 main.py", "make | tee log"])
+
+    await until(controller.end())
+    await controller.start()
+    await controller.step([{ do: [{ run: "npm test" }] }])
+    await advance(10)
+    expect(confirms()).toHaveLength(2)
   })
 
   it("runs once the programmer allows it", async () => {

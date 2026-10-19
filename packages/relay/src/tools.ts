@@ -152,7 +152,7 @@ function combined(input: unknown): string | undefined {
 export const TOOLS = {
   start: {
     description:
-      "Start a live pair programming session in the programmer's editor. Call this as soon as the programmer asks to pair, before reading their code: they're waiting from that moment. Then, before you read or plan, send a `step` with one beat, just a `say`, telling them what you'll look at first, like \"Let me look around your project first.\", so they hear from you at once. The result includes the pairing guide: read it and follow it for the whole session. From then on, everything you do through `step` appears in their editor at a human pace, with your narration.",
+      "Start a live pair programming session in the programmer's editor. Call this as soon as the programmer asks to pair, before reading their code: they're waiting from that moment. Then, before you read or plan, send a `step` with one beat, just a `say`, telling them what you'll look at first, like \"Let me look around your project first.\", so they hear from you at once. The result says which pairing mode the programmer picked (build or learn), and includes the pairing guide and the mode's page: read them and follow them for the whole session. From then on, everything you do through `step` appears in their editor at a human pace, with your narration.",
     inputSchema: {
       task: z.string().optional().describe("A short description of what you'll work on, shown to the programmer."),
       cwd: z

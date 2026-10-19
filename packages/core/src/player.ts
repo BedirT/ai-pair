@@ -25,8 +25,21 @@ export type Scene = {
   focus: Focus
   /** The pointed code is in another file than the cursor, or far from it: looking back changes the view. */
   pointFar: boolean
-  /** Commands the programmer allowed to run without asking, until the session ends. */
-  allowedCommands: Set<string>
+  /** Commands the programmer allowed to run without asking, until the session ends: every one, or by program. */
+  allowed: { all: boolean; programs: Set<string> }
+}
+
+/**
+ * The program a command runs, which the programmer can allow for the session: its first word,
+ * when it's one plain command. Anything a shell reads as more — chained or piped commands,
+ * redirects, substitutions, or a variable set in front — has none, since allowing its first
+ * program would let through whatever else it runs.
+ */
+export function programOf(command: string): string | undefined {
+  const trimmed = command.trim()
+  if (/[;&|<>`$(){}\n]/.test(trimmed)) return undefined
+  const first = trimmed.split(/\s+/)[0]
+  return first && !first.includes("=") ? first : undefined
 }
 
 /** Where actions take effect: the programmer's editor, or a copy of it in memory. */
@@ -496,8 +509,10 @@ export class Player {
     const id = nextRunId++
     const signal = this.stage.pacing.signal
 
-    if (config.confirmCommands && !s.allowedCommands.has(command)) {
-      panel.post({ type: "run", id, command, phase: "confirm" })
+    const program = programOf(command)
+    const allowed = s.allowed.all || (program !== undefined && s.allowed.programs.has(program))
+    if (config.confirmCommands && !allowed) {
+      panel.post({ type: "run", id, command, phase: "confirm", ...(program !== undefined ? { program } : {}) })
       this.reading = true
       this.stage.render()
       const go = await this.stage.confirm(id, command)

@@ -65,6 +65,16 @@ Once the extension is [installed](#install):
    (An agent you started yourself must run **in the
    same folder** as the project, or a subfolder of it.)
 
+   Beside **Start**, pick how the session pairs: **Build** (get it done,
+   shown as it goes) or **Learn** — the agent teaches in small pieces,
+   each one arriving only once the code on screen needs it, and runs
+   each so you see what it does. Learn comes at three splits
+   of who does the work: _Show me_ (it drives), _Together_ (a worked
+   example, then you write the next one like it), _Let me try_ (you
+   drive, it navigates). The pick is remembered and fixed for the
+   session; the agent is told when the session starts, so you only ever
+   say what the task is.
+
 4. The **Pair** panel opens in the secondary side bar, and the agent's
    cursor appears in your editor.
 
@@ -75,7 +85,7 @@ account. While you pair:
 |---|---|
 | say something to the agent | type in the reply box, press Enter. Typing pauses playback. |
 | ask about some code | select it in the editor, then reply: the selection goes along (× leaves it out) |
-| let it run a command | the agent's tests and builds play in an *AI Pair* terminal; **Run**, **Allow for session**, or **Skip** in the panel |
+| let it run a command       | the agent's tests and builds play in an _AI Pair_ terminal; **Run**, **Allow _npm_** (that program), **Allow all**, or **Skip** in the panel |
 | stop it right now          | **Interrupt**, or just edit the code: any edit interrupts. The agent is told at once, and the panel says so until it takes it in             |
 | look around | scroll or switch files. Playback pauses until you **Resume**, which brings you back to the agent's cursor |
 | write a part yourself | **My turn**. The agent becomes the navigator and comments as you type. **Hand back** returns the turn, with your reply if you typed one |

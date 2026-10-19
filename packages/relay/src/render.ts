@@ -8,6 +8,11 @@ export type ReportingTool = "start" | "step" | "listen" | "end"
 export function renderReport(report: Report, tool: ReportingTool): string {
   const sections: string[] = []
   if (tool === "start") sections.push("The session has started.")
+  if (report.mode === "build") {
+    sections.push("The programmer picked Build mode for this session. Its short page follows the guide below.")
+  } else if (report.mode === "learn") {
+    sections.push("The programmer picked Learn mode for this session: they're here to learn this. Its page follows the guide below, and where the two differ, the mode page wins.")
+  }
   for (const e of report.events) sections.push(renderEvent(e))
   for (const b of report.batches) sections.push(renderBatch(b))
   if (report.submitted) sections.push(`Batch ${report.submitted.id} is ${report.submitted.status}.`)

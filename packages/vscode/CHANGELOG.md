@@ -6,9 +6,33 @@
   with one short line first and keep its next batch small, so you hear back
   sooner. And a run's output now reaches an agent waiting on it as soon as
   its batch ends, instead of after everything queued behind it.
-- **A slimmer Start row.** The agent-name button is gone: which agent Start
+- **The panel's menus live in the panel, and fit it.** Keyboard is picked
+  from a small menu right beside its toggle, like speed and
+  mode already were, instead of a list at the top of the window. Keyboards
+  play as you move to them, and menu sub-lines sit left, not
+  centered. Menus shift back inside when the panel is narrow instead of
+  running off its edge, and too narrow for one line, the Start row
+  wraps neatly: play and mode on top, sound below. In a
+  session, a narrow panel puts the controls on a line under the status
+  instead of sliding them over it. The pick commands now open these
+  menus.
+- **A slimmer Start row, all icons.** The panel's second play button (in
+  its title bar) and the agent-name button are gone: which agent Start
   runs is picked with *AI Pair: Choose Agent to Start*, since it rarely
-  changes.
+  changes. The pairing mode is one small button showing the active
+  mode's icon; its menu opens right in the panel.
+- **Build or Learn: pick how a session pairs.** Beside Start, the mode
+  button. *Build* gets it done, shown as it goes. *Learn* teaches: one
+  small idea at a time, the too-simple version first, each piece run so
+  you see what it does, never a question about what hasn't been taught
+  yet. Nothing arrives before the code needs it: no fields or helpers
+  added for where it's headed, the need shown on screen first, then the
+  piece that meets it. Learn comes at three splits of who does the work — *Show me*
+  (the agent drives), *Together* (a worked example, then you write the
+  next one like it), *Let me try* (you drive, the agent navigates). The
+  pick is remembered, fixed for the session, and told to the agent when
+  the session starts, so you only ever say what the task is. The running
+  session's mode shows quietly beside the panel's status.
 - **A run's answer reaches the agent at once.** When the agent waited for a
   command's output, it could sit out a 45-second heartbeat after the command
   finished before hearing the result, looking stuck. Finished runs (and
@@ -18,6 +42,13 @@
   once instead of at the next heartbeat. After Interrupt, the panel's status
   reads _Interrupted · it knows_ until the agent acts on it,
   and the agent is told to stop, say where it stopped, and listen.
+- **Allow a whole kind of command.** When the agent wants to run a command,
+  the panel now offers **Run**, **Allow `npm`** (every command of that
+  program, like `npm test` and `npm run build`), **Allow all**, and **Skip**.
+  Both allow choices last until the session ends. Chained or piped commands
+  (`a && b`, `a | b`) can't be allowed by program, since that would let the
+  other part through too. This replaces **Allow for session**, which only
+  covered the exact same command.
 - **Words and work come in beats.** The agent now sends a batch as beats:
   each one is what it says and the actions those words are about. They start
   together, and the next beat waits until both are done, so the words stay
@@ -53,7 +84,8 @@
   batches while it thinks. Step in and what it wrote ahead is dropped, so your
   interruption still lands right away. New setting:
   `aiPair.workAheadBatches`.
-- **The agent knows a command waits for you.** The agent is told a run is waiting on
+- **A command waiting for you can't go unseen.** The panel comes into view,
+  the command pulses. The agent is told it's waiting on
   you, instead of just hearing that nothing has finished.
 - **The status line says what the wait is**: a clock while the agent thinks,
   a note when it has gone quiet for long, and how many batches are ready.

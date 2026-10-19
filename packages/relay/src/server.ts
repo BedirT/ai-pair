@@ -6,6 +6,7 @@ import { z } from "zod"
 import type { FileContent, Report, ToolName } from "@ai-pair/protocol"
 import { RelayError, type EditorLink } from "./link"
 import { renderFile, renderReport } from "./render"
+import { modeGuide } from "./modeGuide"
 import { TOOLS } from "./tools"
 
 /** The extension's version, which the build defines; unbuilt, as in tests, there's none. */
@@ -53,7 +54,12 @@ export function createServer(link: EditorLink, guide: string, cwd: string): McpS
       const result = await link.call(tool, args as Record<string, unknown>, signal)
       const text = tool === "read" ? renderFile(result as FileContent) : renderReport(result as Report, tool)
       const content: CallToolResult["content"] = [{ type: "text", text }]
-      if (tool === "start") content.push({ type: "text", text: `# Pairing guide\n\n${guide}` })
+      if (tool === "start") {
+        content.push({ type: "text", text: `# Pairing guide\n\n${guide}` })
+        // The mode page comes last: it refines the guide for this session, so it's read with it fresh.
+        const page = modeGuide(result as Report)
+        if (page) content.push({ type: "text", text: page })
+      }
       return { content }
     } catch (e) {
       const code = e instanceof RelayError ? e.code : "internal"

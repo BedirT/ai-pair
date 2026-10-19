@@ -72,6 +72,12 @@
         "icon": "$(chevron-down)"
       },
       {
+        "command": "aiPair.pickMode",
+        "title": "Choose Pairing Mode",
+        "category": "AI Pair",
+        "icon": "$(book)"
+      },
+      {
         "command": "aiPair.playDemo",
         "title": "Play Demo Session",
         "category": "AI Pair"

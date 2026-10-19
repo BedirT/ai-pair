@@ -67,13 +67,21 @@ Start your agent in the folder that's open in VS Code — **Start** does
 that for you — and ask it to pair ("let's pair on…"). In Claude Code you
 can also run `/mcp__pair__start`.
 
+Beside **Start**, pick how the session pairs: **Build** (get it done,
+shown as it goes) or **Learn** (the agent teaches in small pieces), at
+three splits of who does the work: *Show me*, *Together* (a worked
+example, then you write the next one like it), *Let me try* (you drive).
+The pick is remembered, fixed for the session, and told to the agent at
+the start, so you only say what the task is.
+
 - **Reply:** type in the panel's reply box and press Enter. Typing pauses
   playback.
 - **Ask about some code:** select it in the editor, then reply; the selection
   goes along (× leaves it out). Or right-click it: *Ask the Agent About the
   Selection*.
 - **Commands:** the agent's tests and builds play in an *AI Pair* terminal.
-  Choose **Run**, **Allow for session**, or **Skip** in the panel.
+  Choose **Run**, **Allow** that program (like `npm`) or **Allow all** for
+  the session, or **Skip** in the panel.
 - **Interrupt:** the button, or just edit the code.
 - **Look around:** scrolling or switching files pauses playback. **Resume**
   brings you back.
