@@ -7,11 +7,11 @@ import { actionKinds, CURSOR_MARKER, moveProblem, spanProblem, typeProblem } fro
 import { resolveSpan, resolveSpot, spanCandidates, spotCandidates, type Resolution } from "./places"
 import type { Config } from "./controller"
 import type { LineIds, Sighting } from "./lines"
-import type { Change, EditorPort, Focus, PanelPort } from "./ports"
+import type { Change, EditorPort, Focus, PanelPort, VoicePort } from "./ports"
 import { fileLines, isLineStart, lineEnd, lineText, position } from "./text"
 import type { Pacing } from "./timeline"
 import type { Timing } from "./timing"
-import { planTyping, readingTime } from "./typing"
+import { planTyping, readingTime, wordCount } from "./typing"
 
 /** What playback reads and changes. */
 export type Scene = {
@@ -53,6 +53,8 @@ export type Stage = {
   render(): void
   /** Waits for the programmer to allow or decline a command. */
   confirm(id: number, command: string): Promise<boolean>
+  /** The voice to speak a `say` with, when one is on and ready. Rehearsals have none: they are silent. */
+  voice?(): VoicePort | undefined
   /** The identities of the lines of the files played in. */
   lines: LineIds
   /**
@@ -165,10 +167,21 @@ export function coverage(actions: Action[], timing: Timing): number {
   return ms
 }
 
+/** Each `say` of a batch with the span of work it covers, its beat's actions, in normal-speed milliseconds. */
+export function sayPlans(beats: Beat[], timing: Timing): Array<{ say: string; spanMs: number }> {
+  return beats.flatMap((beat) => (typeof beat.say === "string" ? [{ say: beat.say, spanMs: coverage(beat.do ?? [], timing) }] : []))
+}
+
 /** What's left of a beat that was cut short: its actions still to do, as a beat of its own, if any. */
 function remainder(actions: Action[]): Beat[] {
   return actions.length > 0 ? [{ do: actions }] : []
 }
+
+/**
+ * A beat's words, under way. Spoken: done when `spoken` settles, and not waited on past `until`, a
+ * clock time. Read: `leftMs` more of reading time once the beat's work is done.
+ */
+type Speech = { spoken: Promise<void>; until: number } | { leftMs: number }
 
 export class Player {
   /** In a reading pause, or waiting for the programmer to allow a command. */
@@ -265,10 +278,13 @@ export class Player {
       const beat = beats[i]!
       const actions = beat.do ?? []
       const later = beats.slice(i + 1)
-      // Reading time still owed once the beat's work is done.
-      const leftMs = typeof beat.say === "string" ? await this.say(beat.say, actions) : undefined
-      // Once its words were shown, a beat cut short leaves only its actions still to do.
-      const effect = i > 0 || leftMs !== undefined
+      let speech: Speech | undefined
+      if (typeof beat.say === "string") {
+        speech = await this.say(beat.say, actions)
+        if (!speech) return this.stopped(id, beats.slice(i), i > 0)
+      }
+      // Once its words were heard, a beat cut short leaves only its actions still to do.
+      const effect = i > 0 || speech !== undefined
       for (let j = 0; j < actions.length; j++) {
         if (this.stage.pacing.isInterrupted) return this.stopped(id, [...remainder(actions.slice(j)), ...later], effect || j > 0)
         let outcome: Outcome
@@ -292,7 +308,7 @@ export class Player {
           return result
         }
       }
-      if (leftMs !== undefined && !(await this.hearOut(leftMs))) return this.stopped(id, later, true)
+      if (speech && !(await this.hearOut(speech))) return this.stopped(id, later, true)
     }
     return { id, status: "completed" }
   }
@@ -305,39 +321,85 @@ export class Player {
   }
 
   /**
-   * Shows a beat's words, over its `actions`, and resolves once the actions may begin: to the
-   * reading time still owed after they're done. Interrupted meanwhile, the words were still shown,
-   * and the loop over the actions stops at once.
+   * Starts a beat's words, over its `actions`: shown, and spoken when the voice is on. Resolves once
+   * the actions may begin, or to nothing when interrupted before the words were heard.
    */
-  private async say(text: string, actions: Action[]): Promise<number> {
+  private async say(text: string, actions: Action[]): Promise<Speech | undefined> {
     const { panel } = this.stage
     const timing = this.stage.config().timing
     const spanMs = coverage(actions, timing) / this.stage.speed()
     panel.post({ type: "say", text })
     this.reading = true
-    // Read while the work plays: a moment to look at the words first, then the beat lasts as
-    // long as the longer of the reading and the work. Counted in paced time, so pausing holds both.
-    const ms = readingTime(text, timing.reading) / this.stage.speed()
-    panel.post({ type: "reading", ms })
+    const voice = this.stage.voice?.()
+    if (!voice) {
+      // Read while the work plays: a moment to look at the words first, then the beat lasts as
+      // long as the longer of the reading and the work. Counted in paced time, so pausing holds both.
+      const ms = readingTime(text, timing.reading) / this.stage.speed()
+      panel.post({ type: "reading", ms })
+      this.stage.render()
+      // Interrupted meanwhile, the words were still shown: the loop over the actions stops at once.
+      const lead = actions.length > 0 ? Math.min(timing.voice.leadMs, ms) : 0
+      if (lead > 0) await this.stage.pacing.sleep(lead)
+      if (actions.length > 0) {
+        this.reading = false
+        this.stage.render()
+      }
+      return { leftMs: ms - lead - spanMs }
+    }
+    const speechMs = wordCount(text) * timing.voice.msPerWord
+    panel.post({ type: "reading", ms: speechMs })
     this.stage.render()
-    const lead = actions.length > 0 ? Math.min(timing.voice.leadMs, ms) : 0
-    if (lead > 0) await this.stage.pacing.sleep(lead)
+    let heard!: () => void
+    const sounding = new Promise<void>((resolve) => (heard = resolve))
+    const spoken = voice.speak(text, spanMs, heard).catch(() => {})
+    // Making speech takes a moment, more for a heavier model or behind words still queued: the
+    // actions wait until these words are actually heard, so the hands never run ahead of them.
+    // A voice that stays silent too long is let go, so it can't stall the session.
+    let giveUp!: () => void
+    const patience = new Promise<void>((resolve) => (giveUp = resolve))
+    const timer = setTimeout(giveUp, timing.voice.maxStartMs)
+    await Promise.race([sounding, spoken, patience])
+    clearTimeout(timer)
+    if (this.stage.pacing.isInterrupted) {
+      this.reading = false
+      return undefined
+    }
+    // Heard out, but not waited on forever: a voice that goes quiet without ending is let go after
+    // about twice the line's length.
+    const speech: Speech = { spoken, until: Date.now() + 2 * speechMs + timing.voice.maxStartMs }
     if (actions.length > 0) {
+      // Duplex: let the voice get ahead by however much it outruns the work it covers (capped),
+      // then work under it, so talking and working end about together.
+      const lead = Math.min(Math.max(timing.voice.leadMs, speechMs - spanMs), timing.voice.maxLeadMs)
+      await this.stage.pacing.sleep(lead)
       this.reading = false
       this.stage.render()
     }
-    return ms - lead - spanMs
+    return speech
   }
 
   /**
-   * Waits out a beat's reading time, so the next beat starts after it: the view never leaves
-   * code while words about it are still being read. False when interrupted meanwhile.
+   * Waits for a beat's words to end, so the next beat starts after them: the view never leaves
+   * code while words about it are still sounding. False when interrupted meanwhile.
    */
-  private async hearOut(leftMs: number): Promise<boolean> {
-    if (leftMs > 0) {
-      this.reading = true
-      this.stage.render()
-      await this.stage.pacing.sleep(leftMs)
+  private async hearOut(speech: Speech): Promise<boolean> {
+    if ("leftMs" in speech) {
+      if (speech.leftMs > 0) {
+        this.reading = true
+        this.stage.render()
+        await this.stage.pacing.sleep(speech.leftMs)
+      }
+    } else {
+      const left = speech.until - Date.now()
+      if (left > 0) {
+        this.reading = true
+        this.stage.render()
+        // Not a paced sleep: stopping the voice, as an interruption does, settles `spoken`.
+        let letGo!: () => void
+        const limit = setTimeout(() => letGo(), left)
+        await Promise.race([speech.spoken, new Promise<void>((resolve) => (letGo = resolve))])
+        clearTimeout(limit)
+      }
     }
     if (this.reading) {
       this.reading = false

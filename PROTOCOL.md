@@ -43,7 +43,7 @@ marker.
 
 **Action.** A single visible operation: move, select, type, delete, point, run a command.
 
-**Beat.** One moment of a batch: words (`say`) and the actions they go with (`do`), played together. A beat's words and actions start together; the next beat starts once both are done. Either may be missing: a beat of only `say` talks, one of only `do` works quietly.
+**Beat.** One moment of a batch: words (`say`) and the actions they go with (`do`), played together. A beat's voice and actions start together; the next beat starts once both are done. Either may be missing: a beat of only `say` talks, one of only `do` works quietly.
 
 **Batch.** An ordered list of beats submitted in one `step` call. A batch is
 the unit of planning: one idea, typically one narration plus the few edits it
@@ -255,11 +255,12 @@ type Action =
   | { run: string, wait?: number }
 ```
 
-A beat's words and actions start together; the next beat starts once both are
-done. A beat with only `say` talks; one with only `do` works quietly. The
-text shows at the beat's start, its actions start after a short lead (capped
-by the reading time), and the beat lasts as long as the longer of the reading
-and the work.
+A beat's voice and actions start together; the next beat starts once both are
+done. A beat with only `say` talks; one with only `do` works quietly. With the
+voice on, a long `say` gets ahead and its actions run under the rest of it.
+With the voice off, the text shows at the beat's start, its actions start
+after a short lead (capped by the reading time), and the beat lasts as long
+as the longer of the reading and the work.
 
 Each action is an object with exactly one of these keys. Anything else is
 rejected, including two actions in one object (`{ move: …, type: … }`): they
@@ -276,8 +277,9 @@ agent action, that is an edit like any other (and interrupts).
 ### `say`
 
 Shows the text as the current message in the narration panel. It stays current
-until the next `say`, then moves into the history. Inline code in backticks is
-rendered as code.
+until the next `say`, then moves into the history. With the voice on, it is
+spoken; with the voice off, it is read beside the code, and inline code in
+backticks is rendered as code.
 
 Keep messages short: one to three sentences. Split longer explanations across
 beats.
@@ -373,6 +375,11 @@ commands can still run in the background with the agent's native tools.
 - **Result.** The batch's report shows each `run`: the exit code, the last
   ~12,000 characters of output as plain text, and the terminal's shell
   (`pwsh`, `zsh`, …) so the agent can write commands for it.
+- **Read out.** With the voice on, when a batch ends on a `run` and nothing
+  is queued behind it, the extension reads its result out at once, while the
+  agent reads the report: a short output whole, a long one's line count and
+  last line, a failure's last line. The words are in the report as `said`, so
+  the agent goes on from them instead of repeating them.
 - **Failure.** A nonzero exit fails the batch with `command_failed`, since the
   rest of the batch, and the next one, were planned assuming success. A `run`
   counts as played once its command has started, so its beat is never returned as
@@ -468,7 +475,7 @@ lines, not as JSON strings full of escapes. It says, in order:
 
 - **what didn't play**, verbatim, one beat per line, ready to resubmit.
   A beat cut short comes first, as `{ do: rest }` without its `say`, which
-  already played; a failed batch's failing beat comes first.
+  was already heard; a failed batch's failing beat comes first.
 
 3. **The batch this `step` submitted**, if it hasn't finished: playing or
    queued. Or, if it was rejected, the action of its beat that would fail, the error, and
@@ -478,7 +485,9 @@ lines, not as JSON strings full of escapes. It says, in order:
 4. **The agent cursor**, only when it isn't where the agent last saw it in a
    report, e.g. because the programmer's edits moved it.
 5. Whether the call returned because `MAX_BLOCK` elapsed, whether it's the
-   programmer's turn, and whether the session has ended.
+   programmer's turn, and whether the session has ended. The `start` report,
+   and any report where it changed, also says whether the programmer hears
+   each `say` spoken (`voice: "on"`) or reads it (`voice: "off"`).
 
 For example, a batch interrupted by a message, and the batch queued behind it:
 
@@ -544,6 +553,7 @@ type Report = {
   paused?: true; // playback is paused in the editor: batches are held until the programmer resumes
   stillMs?: number; // step only: the editor sat still this long, the queue dry, before this batch came
   confirming?: { id: number; command: string }; // a `run` waiting for the programmer to allow it
+  voice?: "on" | "off"; // in the `start` report, and any report where it changed
   mode?: "build" | "learn"; // the session's pairing mode; in the `start` report only
   drive?: "show" | "together" | "try"; // with mode `learn`: who does the work
 }
@@ -562,6 +572,7 @@ type BatchResult = {
     truncated?: true
     running?: true            // still running in its terminal
     shell?: string
+    said?: string; // what the voice read out about it as it landed
   }[]
   unsaved?: { file: string, error: string }[]  // edited files that couldn't be saved
 }

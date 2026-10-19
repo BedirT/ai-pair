@@ -19,6 +19,27 @@ export type ModePort = {
   choice(): ModeChoice
 }
 
+/** How the voice is doing, as the panel shows it. `ready` is when words are actually spoken. */
+export type VoiceStatus = { enabled: boolean; state: "off" | "loading" | "ready" | "error"; voice: string; detail?: string }
+
+/** One voice the panel's menu offers: its friendly name, a short tag, whether choosing it
+ *  fetches its engine first, and its shipped sample file when it has one. The raw voice id
+ *  stays out of the friendly parts; nobody picks by that. */
+export type VoiceRow = { model: string; voice: string; name: string; tag: string; download?: boolean; preview?: string }
+
+/** Everything the voice menu shows: the current pick, the two engines' voices, the second's note. */
+export type VoiceChoices = { current: { model: string; voice: string }; kokoro: VoiceRow[]; chatterbox: VoiceRow[]; chatterboxNote: string }
+
+/** What the panel asks of the voice. */
+export type VoicePanelPort = {
+  toggle(): void
+  status(): VoiceStatus
+  choices(): VoiceChoices
+  choose(model: string, voice: string): void
+  /** Offer a recording of the programmer's own to sound like (a file picker). */
+  chooseRecording(): void
+}
+
 /** Messages from the webview. */
 type FromPanel =
   | { type: "ready" }
@@ -39,6 +60,9 @@ type FromPanel =
   | { type: "runDecision"; id: number; run: boolean; allow?: "program" | "all" }
   | { type: "agentStart" }
   | { type: "modeSet"; id: string }
+  | { type: "voiceToggle" }
+  | { type: "voiceSet"; model: string; voice: string }
+  | { type: "voiceRecording" }
 
 const MAX_LOG = 400
 
@@ -50,10 +74,12 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
   controller?: Controller
   starter?: StarterPort
   mode?: ModePort
+  voice?: VoicePanelPort
   private view?: vscode.WebviewView
   /** Everything posted so far, replayed when the view is (re)created. */
   private readonly log: PanelEvent[] = []
   private modeChoice: ModeChoice = { id: "build", label: "Build" }
+  private voiceStatus: VoiceStatus = { enabled: false, state: "off", voice: "af_heart" }
 
   constructor(
     private readonly resolvePath: (file: string) => string,
@@ -77,9 +103,27 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
     void this.view?.webview.postMessage({ type: "modeChoice", ...choice })
   }
 
+  /** The voice was turned on or off, loaded, or failed. Not logged: only now matters. Its menu
+   *  rides along: what changed may be exactly what the menu shows (a new pick, a fetch done). */
+  showVoiceStatus(status: VoiceStatus): void {
+    this.voiceStatus = status
+    void vscode.commands.executeCommand("setContext", "aiPair.voiceOn", status.enabled)
+    void this.view?.webview.postMessage({ type: "voiceState", ...status })
+    this.showVoiceChoices()
+  }
+
+  /** The voice menu's rows, as they now stand, sample files turned into page URLs. Not logged. */
+  showVoiceChoices(): void {
+    const webview = this.view?.webview
+    if (!this.voice || !webview) return
+    const choices = this.voice.choices()
+    const shown = (rows: VoiceRow[]) => rows.map((r) => (r.preview ? { ...r, preview: webview.asWebviewUri(vscode.Uri.file(r.preview)).toString() } : r))
+    void webview.postMessage({ type: "voiceChoices", ...choices, kokoro: shown(choices.kokoro), chatterbox: shown(choices.chatterbox) })
+  }
+
   /** Opens one of the panel's own menus (from a command). The page ignores it mid-session,
    *  when the row these live on is put away. */
-  openMenu(menu: "mode"): void {
+  openMenu(menu: "mode" | "voice"): void {
     this.reveal()
     void this.view?.webview.postMessage({ type: "openMenu", menu })
   }
@@ -124,6 +168,7 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
         this.showSpeed(this.speed.get())
         this.showSelection(this.selection.ref())
         this.showMode(this.mode?.choice() ?? this.modeChoice)
+        this.showVoiceStatus(this.voice?.status() ?? this.voiceStatus)
         return
       case "speed":
         this.speed.set(m.value)
@@ -140,6 +185,15 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
         return
       case "modeSet":
         this.mode?.set(m.id)
+        return
+      case "voiceToggle":
+        this.voice?.toggle()
+        return
+      case "voiceSet":
+        this.voice?.choose(m.model, m.voice)
+        return
+      case "voiceRecording":
+        this.voice?.chooseRecording()
         return
       case "draft":
         // Typing a reply pauses playback, the way a pair stops when you start talking.

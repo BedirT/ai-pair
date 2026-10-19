@@ -8,6 +8,11 @@ export type ReportingTool = "start" | "step" | "listen" | "end"
 export function renderReport(report: Report, tool: ReportingTool): string {
   const sections: string[] = []
   if (tool === "start") sections.push("The session has started.")
+  if (report.voice === "on") {
+    sections.push("Your voice is on: the programmer hears each `say`. Write it to be spoken: plain words, no markdown or backticks, code said the way a programmer says it out loud.")
+  } else if (report.voice === "off") {
+    sections.push("Your voice is off: the programmer reads each `say` beside the code while it plays. Keep it short; `backticks` for names.")
+  }
   if (report.mode === "build") {
     sections.push("The programmer picked Build mode for this session. Its short page follows the guide below.")
   } else if (report.mode === "learn") {
@@ -104,9 +109,11 @@ function renderRun(run: RunResult): string {
   const outcome =
     run.exit_code !== undefined ? `exited with ${run.exit_code}` : run.running ? "still running in its terminal" : "exit code unknown"
   const shell = run.shell ? ` in ${run.shell}` : ""
-  if (run.output === "") return `Ran \`${run.command}\`${shell}: ${outcome}, no output.`
+  // Read out already: the agent's reply should build on these words, not say them again.
+  const said = run.said ? `\nThe programmer already heard the editor read this out: "${run.said}" Go on from it; don't say it again.` : ""
+  if (run.output === "") return `Ran \`${run.command}\`${shell}: ${outcome}, no output.${said}`
   const fence = "`".repeat(Math.max(3, longestRun(run.output, "`") + 1))
-  return `Ran \`${run.command}\`${shell}: ${outcome}. Output${run.truncated ? ", its end" : ""}:\n${fence}\n${run.output}\n${fence}`
+  return `Ran \`${run.command}\`${shell}: ${outcome}. Output${run.truncated ? ", its end" : ""}:\n${fence}\n${run.output}\n${fence}${said}`
 }
 
 function renderExcerpt(x: Excerpt): string {

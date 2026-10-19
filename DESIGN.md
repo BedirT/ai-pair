@@ -64,6 +64,22 @@ Layout, top to bottom:
      it yet_ past a minute and a half), so a long think reads as work and a
      stuck agent as stuck; while it plays, how many batches are written and
      ready behind this one, and _writing more_ while the agent is at it.
+     With the voice on, a think after news isn't silent either. When a batch
+     ends on a run with nothing queued after it, the voice reads the result
+     off the screen at once, as a person at the desk would: a short output
+     whole (_It printed 5.0._), a long one by its length and last line, a
+     failure by its last line (_It failed: NameError: name 'x' is not
+     defined._). The agent's report quotes it, so its answer goes on from
+     it. Then, six seconds into the think after a run (three after something
+     the programmer said or did, five when the editor just ran out of written
+     batches), the voice makes the small sound a person would, fitted to it
+     (_Mm. Let me see._, _Let me look at why._, _One sec._), and once more
+     fifteen seconds later if the think goes on (_Still working it out._).
+     The extension says all of these, not the agent, so they cost no model
+     time and work with any agent; they're facts and thinking noises, never
+     a guess at the answer. A quiet heartbeat isn't news, so thinking after
+     one stays silent. A filler not yet heard when the agent's own words
+     come is taken back.
      After Interrupt the words are _Interrupted · it knows_ until the agent
      visibly acts on it or the programmer speaks: a quiet agent that heard
      must not read like one that didn't. While paused they say the work is
@@ -105,9 +121,23 @@ the work, each with a line saying what it means. It's picked per
 session before it starts and remembered between them; the agent is
 told at the start, and the mode's page rides with its guide. The panel never
 hosts an agent: each stays its own app, with its own screen, model and
-thinking settings, and Start treats them all the same (the panel's menus all
-open here: speed, mode; each shifts back inside when the panel is too narrow
-for where it hangs). The reply box sits below, once a session is running.
+thinking settings, and Start treats them all the same. At the right of
+the same row sits the voice toggle as an icon only, its name in its
+tip, showing on or off, joined to its own small menu opening here in
+the panel (the panel's menus all do: speed, mode, voice; each shifts
+back inside when the panel is too narrow for where it hangs). The voice
+menu lists Kokoro's and
+Chatterbox's voices under friendly names with a colored dot each, a
+down-arrow on one whose engine is still to fetch, and the programmer's
+own recording among them, with choosing one a row of its own. Each
+voice is heard as it's moved to — a tiny shipped sample, cut short the
+moment the pointer moves on, so voices compare back to back without
+warming an engine up — and the keyboard menu's switches likewise play
+as they're moved to: both are chosen by ear.
+Too narrow for one line, the row wraps deliberately: play left and the
+mode right on top, sound below with voice left and keys right. Words
+appear under them only when something needs saying, like the voice
+loading or failing. The reply box sits below, once a session is running.
 In every message, code spans that name a file (`game.ts`,
 `src/server.ts`) open it, found by name if it isn't a path from the
 workspace's root, and URLs open in the browser. File and code references are
@@ -129,6 +159,20 @@ colors and borders. Their tooltips are the panel's own, in the theme's hover
 colors, shown after a moment's hover or on keyboard focus, since native
 tooltips show unreliably in a webview. The agent's colors are theme colors too (see Agent
 cursor).
+
+**The voice.** Watching code type in one place and reading about it in
+another is two jobs at once, so the panel can read the narration aloud
+itself: **Voice** in the band's controls (and, before a session, above the
+reply box, with **Pick a voice** beside it). With the voice on, the band's
+big current message goes away — the words go straight to the history,
+where they can still be scanned back over — and the eyes stay on the code.
+A command waiting to be allowed still shows its box: it's the one thing in
+the band that needs a click. The status line and the reading ring stay: the
+ring now fills over speaking time. Each `say` is spread over the typing it
+explains — a long one gets a head start, then talks over the typing, so the
+two finish about together; a natural voice keeps one steady pace while it
+does this, spread by pauses alone, never played faster or slower line by
+line. Interrupting cuts the voice off mid-line.
 
 Behavior:
 
@@ -154,8 +198,11 @@ Behavior:
   `aiPair.confirmCommands` is off), with the cursor in its read state and the
   status _Needs you: allow the command?_. Nothing plays until the programmer
   answers, so the question can't be missed: the panel comes into view, the
-  command box pulses. The command then runs in an _AI Pair_ terminal,
-  revealed without taking focus, and the history records its exit code.
+  command box pulses, and the voice, if on, asks out loud. Once they answer,
+  the ask is taken back: if it's still queued or sounding, it isn't said, and
+  the agent's other words go on. The
+  command then runs in an *AI Pair* terminal, revealed without taking focus,
+  and the history records its exit code.
 - **Space pauses and resumes** while the panel has focus, except in the reply
   box. It never presses the focused button (after a click, that could be
   End); Enter still does.
@@ -208,7 +255,7 @@ the close typed before the cursor leaves it, and the pause after it.
 `type_fast` shortens both by the same factor as its typing. With nothing
 after the `▌`, the cursor is already in place and there's neither.
 
-**Reading.** A beat's `say` gets
+**Reading.** A beat's `say`, without a voice, gets
 `clamp(words × 270, 1500, 9000)`: enough to read it at an ordinary pace,
 about 220 words a minute. Its actions start a moment after the words show,
 and the beat lasts as long as the longer of the reading and the work, so a
@@ -217,7 +264,11 @@ still gets read.
 
 **Speed.** The panel's speed menu (0.4×, 0.6×, 1.0×, 1.5×, 2.0×, 3.0×) scales
 all of it together, immediately, even mid-typing. It's the `aiPair.speed`
-setting, which takes any value from 0.25 to 4.
+setting, which takes any value from 0.25 to 4. The voice is one of the things
+it scales, so there's one control, not two: with the voice on, typing waits
+for speech, and a faster session with a slow voice wouldn't be faster. The
+voice follows from 1× up to 2×. Slower than 1× it keeps its natural pace,
+since a drawl helps no one; past 2× words blur.
 
 ### Undo
 

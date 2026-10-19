@@ -1,7 +1,7 @@
 import * as nodePath from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { typeProblem, type Action, type Beat } from "@ai-pair/protocol"
-import { advance, setup, testConfig, track, until } from "./fake"
+import { advance, FakeVoice, setup, testConfig, track, until } from "./fake"
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -77,6 +77,16 @@ describe("timing", () => {
     ])
   })
 
+  it("starts making a batch's speech as soon as it's queued", async () => {
+    const { controller } = setup({ "a.ts": "" }, { workAheadBatches: 10 })
+    const voice = new FakeVoice()
+    controller.setVoice(voice)
+    await controller.start()
+    await controller.step([{ do: [{ move: { file: "a.ts", line: 1, to: "line_end" } }, { type: "hello▌" }] }])
+    await until(controller.step([{ say: "Now the name.", do: [{ type: " a▌" }] }]), 10)
+    expect(voice.prepared).toEqual(["Now the name."])
+  })
+
   it("tells the agent how long the editor sat still waiting for its batch, unless it was waiting on the programmer", async () => {
     const { controller } = setup({ "a.ts": "" })
     await controller.start()
@@ -123,7 +133,119 @@ describe("timing", () => {
     expect(editor.text("a.ts")).toBe("abc")
   })
 
-  it("works while the words are read, and the beat lasts as long as the longer of the two", async () => {
+  it("speaks a say over the typing it covers, telling the voice how long that typing takes", async () => {
+    const { editor, controller } = setup({ "a.ts": "" })
+    const voice = new FakeVoice()
+    controller.setVoice(voice)
+    await controller.start()
+    await controller.step([{ do: [{ move: { file: "a.ts", line: 1, to: "line_end" } }] }, { say: "one two", do: [{ type: "ab▌" }] }])
+    await advance(1000)
+    expect(voice.spoken).toEqual(["one two"])
+    expect(voice.spans).toEqual([200]) // two characters at 100 ms each
+    // The words are still being said, and the typing went ahead under them.
+    expect(editor.text("a.ts")).toBe("ab")
+    voice.finish()
+  })
+
+  it("types a say's work only once its words are heard, however long the voice takes to make them", async () => {
+    const { editor, controller } = setup({ "a.ts": "" })
+    const voice = new FakeVoice()
+    voice.slowStart = true
+    controller.setVoice(voice)
+    await controller.start()
+    await controller.step([{ do: [{ move: { file: "a.ts", line: 1, to: "line_end" } }] }, { say: "one two", do: [{ type: "ab▌" }] }])
+    // The voice is still making the words: no typing ahead of them.
+    await advance(3000)
+    expect(editor.text("a.ts")).toBe("")
+    voice.start()
+    await advance(1000)
+    expect(editor.text("a.ts")).toBe("ab")
+    voice.finish()
+    await until(controller.step([]))
+
+    // A voice that never starts is given up on, so the session goes on.
+    await controller.step([{ say: "three four", do: [{ type: "c▌" }] }])
+    await advance(testConfig.timing.voice.maxStartMs + 1000)
+    expect(editor.text("a.ts")).toBe("abc")
+    voice.finish()
+  })
+
+  it("lets a long say get ahead, then types under it", async () => {
+    const { editor, controller } = setup({ "a.ts": "" })
+    const voice = new FakeVoice()
+    controller.setVoice(voice)
+    await controller.start()
+    const twenty = Array.from({ length: 20 }, () => "word").join(" ")
+    await controller.step([{ do: [{ move: { file: "a.ts", line: 1, to: "line_end" } }] }, { say: twenty, do: [{ type: "ab▌" }] }])
+    // The say needs 2000 ms, its typing only 200: most of the gap is spoken first…
+    await advance(1200)
+    expect(editor.text("a.ts")).toBe("")
+    // …then the typing runs under the rest of the talking.
+    await advance(1200)
+    expect(editor.text("a.ts")).toBe("ab")
+    voice.finish()
+    await until(controller.step([]))
+
+    await controller.step([{ say: "one two three four five", do: [{ type: "c▌" }] }])
+    await advance(100)
+    controller.userInterrupt()
+    expect(voice.stops).toBeGreaterThan(0)
+  })
+
+  it("starts the next beat only once this beat's words are heard out, however short", async () => {
+    const { editor, controller } = setup({ "a.ts": "" })
+    const voice = new FakeVoice()
+    controller.setVoice(voice)
+    await controller.start()
+    await controller.step([
+      { say: "one", do: [{ move: { file: "a.ts", line: 1, to: "line_end" } }, { type: "a▌" }] },
+      { say: "two", do: [{ type: "b▌" }] },
+    ])
+    await advance(2000)
+    // The first beat's work is done, but its words still sound: the second beat waits.
+    expect(editor.text("a.ts")).toBe("a")
+    expect(voice.spoken).toEqual(["one"])
+    voice.finish()
+    await advance(500)
+    expect(voice.spoken).toEqual(["one", "two"])
+    expect(editor.text("a.ts")).toBe("ab")
+    voice.finish()
+  })
+
+  it("keeps the view on the pointed code while the beat's words about it sound", async () => {
+    const { editor, controller } = setup({ "a.ts": "const x = 1\n" })
+    const voice = new FakeVoice()
+    controller.setVoice(voice)
+    await controller.start()
+    await controller.read("a.ts")
+    await controller.step([{ say: "one two", do: [{ point: { file: "a.ts", line: 1, text: "const x" } }] }])
+    const after = track(controller.step([]))
+    await advance(2000)
+    expect(after.done).toBe(false)
+    expect(editor.point).toBeDefined()
+    expect(editor.focus).toBe("point")
+    voice.finish()
+    await advance(100)
+    expect(after.done).toBe(true)
+  })
+
+  it("lets go of a say that never ends, so a voice gone quiet can't stall the session", async () => {
+    const { controller } = setup({ "a.ts": "const x = 1\n" })
+    const voice = new FakeVoice()
+    controller.setVoice(voice)
+    await controller.start()
+    await controller.read("a.ts")
+    await controller.step([{ say: "one two", do: [{ point: { file: "a.ts", line: 1, text: "const x" } }] }])
+    const after = track(controller.step([]))
+    await advance(4000)
+    expect(after.done).toBe(false) // heard out, as long as it might still be talking
+    // Never finished: about twice the line's length after the voice's own patience, the batch moves on.
+    await advance(2000)
+    expect(after.done).toBe(true)
+    expect(after.value!.batches).toMatchObject([{ status: "completed" }])
+  })
+
+  it("without a voice, works while the words are read, and the beat lasts as long as the longer of the two", async () => {
     const { editor, controller } = setup({ "a.ts": "" })
     await controller.start()
     // Ten words take 1000 ms to read; the typing takes 200, after a move of 100.
@@ -139,6 +261,18 @@ describe("timing", () => {
     expect(editor.text("a.ts")).toBe("ab") // still reading
     await advance(400)
     expect(editor.text("a.ts")).toBe("abc")
+  })
+
+  it("tells the agent whether the voice is on when the session starts, and again when it changes", async () => {
+    const { controller } = setup({ "a.ts": "" })
+    const voice = new FakeVoice()
+    controller.setVoice(voice)
+    expect((await controller.start()).voice).toBe("on")
+    const same = await until(controller.step([{ do: [{ move: { file: "a.ts", line: 1, to: "line_end" } }] }]))
+    expect(same.voice).toBeUndefined()
+    voice.enabled = false
+    expect((await until(controller.step([]))).voice).toBe("off")
+    expect((await until(controller.step([]))).voice).toBeUndefined()
   })
 
   it("tells the agent the pairing mode when the session starts, and not again", async () => {
@@ -1262,6 +1396,50 @@ describe("run", () => {
     ])
   })
 
+  it("reads a run's result out as it lands when nothing is planned after it, and tells the agent what it said", async () => {
+    const { editor, controller } = setup({}, { confirmCommands: false, workAheadBatches: 2 })
+    editor.commandScript["python a.py"] = { ms: 100, exitCode: 0, output: "5.0\n" }
+    const voice = new FakeVoice()
+    controller.setVoice(voice)
+    await controller.start()
+    await controller.step([{ do: [{ run: "python a.py" }] }])
+    const report = await until(controller.step([]))
+    expect(voice.spoken.at(-1)).toBe("It printed 5.0.")
+    expect(report.batches[0]!.runs![0]!.said).toBe("It printed 5.0.")
+
+    // The agent planned past it: what it queued says what comes next, not the editor.
+    await controller.step([{ do: [{ run: "python a.py" }] }])
+    await controller.step([{ say: "Next." }])
+    const ahead = await until(controller.step([]))
+    expect(ahead.batches[0]!.runs![0]!.said).toBeUndefined()
+    expect(voice.spoken.filter((w) => w.startsWith("It printed"))).toHaveLength(1)
+    await until(controller.end())
+  })
+
+  it("reads out what a person would read off the screen: a short output, a long one's end, a failure's last line", async () => {
+    const cases: Array<[{ exitCode: number; output: string }, string]> = [
+      [{ exitCode: 0, output: "" }, "It ran, with no output."],
+      [{ exitCode: 0, output: "a 2\nb 3\n" }, "It printed a 2, b 3."],
+      [{ exitCode: 0, output: "-1\n" }, "It printed -1."],
+      [{ exitCode: 0, output: "collected 3 items\n\n===== 3 passed in 0.12s =====\n" }, "It printed collected 3 items, 3 passed in 0.12s."],
+      [{ exitCode: 0, output: Array.from({ length: 40 }, (_, i) => `step ${i + 1}`).join("\n") }, "It printed 40 lines, ending with step 40."],
+      [{ exitCode: 0, output: "/Users/someone/projects/thing/build/output.bin\n" }, "It printed a long line."],
+      [{ exitCode: 1, output: 'Traceback (most recent call last):\n  File "a.py", line 3, in <module>\nNameError: name \'x\' is not defined\n' }, "It failed: NameError: name 'x' is not defined."],
+      [{ exitCode: 2, output: "x".repeat(300) }, "It failed, with exit code 2."],
+    ]
+    for (const [script, words] of cases) {
+      const { editor, controller } = setup({}, { confirmCommands: false })
+      editor.commandScript["go"] = { ms: 100, ...script }
+      const voice = new FakeVoice()
+      controller.setVoice(voice)
+      await controller.start()
+      await controller.step([{ do: [{ run: "go" }] }])
+      await until(controller.step([]))
+      expect(voice.spoken.at(-1)).toBe(words)
+      await until(controller.end())
+    }
+  })
+
   it("saves what the batch has typed before running a command, so the command reads it from disk", async () => {
     const { editor, controller } = setup({ "a.ts": "" }, { confirmCommands: false })
     await controller.start()
@@ -1432,6 +1610,51 @@ describe("run", () => {
     await until(controller.end())
   })
 
+  it("fills the agent's thinking after news with the voice, fitting words, twice at most", async () => {
+    const { controller } = setup({}, { confirmCommands: false })
+    const voice = new FakeVoice()
+    controller.setVoice(voice)
+    await controller.start()
+    await controller.step([{ do: [{ run: "npm test" }] }])
+    await until(controller.listen(), 5_000)
+    const said = voice.spoken.length
+    expect(voice.spoken.at(-1)).toMatch(/^It ran/)
+    // The read-out fills the first seconds, and a quick answer needs no filler after it.
+    await advance(5_900)
+    expect(voice.spoken.length).toBe(said)
+    await advance(200)
+    expect(voice.spoken.slice(said)).toHaveLength(1)
+    expect(voice.spoken.at(-1)).toMatch(/think|moment|see/i)
+    await advance(15_000)
+    expect(voice.spoken.slice(said)).toHaveLength(2)
+    await advance(60_000)
+    expect(voice.spoken.slice(said)).toHaveLength(2)
+
+    // Nothing to answer, as after a quiet heartbeat: thinking then is no one's wait.
+    const quiet = await until(controller.listen(), 50_000)
+    expect(quiet.waiting).toBe(true)
+    await advance(20_000)
+    expect(voice.spoken.slice(said)).toHaveLength(2)
+    await until(controller.end())
+  })
+
+  it("takes back a filler not yet heard once the agent's own words come", async () => {
+    const { controller } = setup({}, { confirmCommands: false })
+    const voice = new FakeVoice()
+    controller.setVoice(voice)
+    await controller.start()
+    await controller.step([{ do: [{ run: "npm test" }] }])
+    await until(controller.listen(), 5_000)
+    voice.slowStart = true
+    await advance(6_100)
+    const filler = voice.spoken.at(-1)!
+    await controller.step([{ say: "It passed." }])
+    expect(voice.takenBack).toEqual([filler])
+    voice.start()
+    voice.finish()
+    await until(controller.end())
+  })
+
   it("tells a waiting agent at once when the programmer pauses, and again when they resume", async () => {
     const { controller } = setup({ "a.ts": "" })
     await controller.start()
@@ -1457,12 +1680,31 @@ describe("run", () => {
     await until(controller.end())
   })
 
-  it("tells the agent when a command waits for the programmer", async () => {
+  it("tells the agent, and asks out loud, when a command waits for the programmer", async () => {
     const { controller } = setup({}, { maxBlockMs: 1000 })
+    const voice = new FakeVoice()
+    controller.setVoice(voice)
     await controller.start()
     await controller.step([{ do: [{ run: "npm test" }] }])
     const report = await until(controller.step([]))
     expect(report).toMatchObject({ waiting: true, confirming: { id: 1, command: "npm test" } })
+    expect(voice.spoken.at(-1)).toMatch(/run it/)
+  })
+
+  it("stops asking out loud once the programmer answers, leaving the agent's other words be", async () => {
+    const { panel, controller } = setup()
+    const voice = new FakeVoice()
+    controller.setVoice(voice)
+    await controller.start()
+    await controller.step([{ do: [{ run: "npm test" }] }])
+    await advance(10)
+    const ask = voice.spoken.at(-1)
+    expect(ask).toMatch(/run it/)
+    const confirm = panel.events.find((e) => e.type === "run" && e.phase === "confirm")
+    controller.decideRun(confirm!.type === "run" ? confirm!.id : -1, true)
+    await advance(10)
+    expect(voice.takenBack).toEqual([ask])
+    expect(voice.stops).toBe(0)
   })
 
   it("is not allowed during the programmer's turn", async () => {

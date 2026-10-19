@@ -48,7 +48,7 @@ describe("history", () => {
   it("cuts an interrupted step down to the beats that played, keeping the session's own messages as they were", () => {
     for (const device of [false, true]) {
       const messages = [
-        ...turn("start", {}, quiet),
+        ...turn("start", {}, { ...quiet, voice: "off" }),
         ...turn("step", { beats: [greet, name] }, { ...quiet, submitted: { id: 1, status: "playing" } }, device),
         // Cut inside " there▌": the beat comes back as what's left of it, without its say.
         ...turn("listen", {}, { ...quiet, batches: [{ id: 1, status: "interrupted", unplayed: [{ do: [{ type: "ere▌" }] }, name] }] }),

@@ -19,6 +19,8 @@ const ICONS = {
   exit: svg('<path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h11"/>'),
   send: svg('<path d="M4 12l16-8-6 16-2.5-6.5z"/>'),
   play: svg('<path d="M8 5l11 7-11 7z"/>'),
+  speaker: svg('<path d="M11 5L6 9H3v6h3l5 4zM15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/>', "speaker-on"),
+  speakerOff: svg('<path d="M11 5L6 9H3v6h3l5 4zM16 9l6 6M22 9l-6 6"/>', "speaker-off"),
   chevron: svg('<path d="M7 10l5 5 5-5"/>', "chevron"),
   // The pairing modes: bricks going up, an eye watching, two people, a pencil in your own hand.
   build: svg('<rect x="3" y="13" width="8" height="7" rx="1"/><rect x="13" y="13" width="8" height="7" rx="1"/><rect x="8" y="4" width="8" height="7" rx="1"/>'),
@@ -36,7 +38,7 @@ export function panelHtml(cspSource: string): string {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src ${cspSource};">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
   /*
@@ -144,7 +146,7 @@ export function panelHtml(cspSource: string): string {
   #end { margin-left: 2px; }
   #speed-wrap { position: relative; }
   #speed { font-variant-numeric: tabular-nums; }
-  :is(#speed-menu, #mode-menu) {
+  :is(#speed-menu, #mode-menu, #voice-menu) {
     position: absolute; right: 0; top: 28px; z-index: 10; padding: 4px; border-radius: 6px;
     display: flex; flex-direction: column; background: var(--vscode-menu-background, var(--surface));
     color: var(--vscode-menu-foreground, var(--fg));
@@ -152,20 +154,27 @@ export function panelHtml(cspSource: string): string {
     box-shadow: 0 4px 14px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.18));
     max-width: calc(100vw - 20px);
   }
-  :is(#speed-menu, #mode-menu)[hidden] { display: none; }
-  :is(#speed-menu, #mode-menu) button { justify-content: flex-start; height: 24px; padding: 0 8px; color: inherit; text-align: left; }
+  :is(#speed-menu, #mode-menu, #voice-menu)[hidden] { display: none; }
+  :is(#speed-menu, #mode-menu, #voice-menu) button { justify-content: flex-start; height: 24px; padding: 0 8px; color: inherit; text-align: left; }
   #speed-menu button { font-variant-numeric: tabular-nums; }
-  :is(#speed-menu, #mode-menu) button[aria-checked="true"] { background: var(--soft-hover); }
-  :is(#speed-menu, #mode-menu) button:hover { background: var(--vscode-menu-selectionBackground, var(--soft)); color: var(--vscode-menu-selectionForeground, inherit); }
+  :is(#speed-menu, #mode-menu, #voice-menu) button[aria-checked="true"] { background: var(--soft-hover); }
+  :is(#speed-menu, #mode-menu, #voice-menu) button:hover { background: var(--vscode-menu-selectionBackground, var(--soft)); color: var(--vscode-menu-selectionForeground, inherit); }
   /* The pairing mode: one button showing the active mode's icon; its menu opens here, in the panel. */
   #mode-wrap { position: relative; }
   #mode-btn { box-shadow: inset 0 0 0 1px var(--hair); padding: 0 7px; }
   #mode-btn:hover, #mode-btn.on { background: var(--vscode-toolbar-hoverBackground, var(--soft)); }
   #mode-current { display: inline-flex; }
   #mode-menu { left: 0; right: auto; min-width: 232px; }
-  #mode-menu button { height: auto; padding: 5px 8px; }
+  :is(#mode-menu, #voice-menu) button { height: auto; padding: 5px 8px; }
   .mode-text { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; }
   .mode-desc { font-size: 11px; color: color-mix(in srgb, currentColor 62%, transparent); }
+  /* Menu sections and rows: a colored dot where an icon would only repeat itself, a down-arrow
+     on a voice whose engine still has to be fetched. */
+  .menu-head { padding: 6px 8px 2px; font-size: 11px; font-weight: 600; color: color-mix(in srgb, currentColor 62%, transparent); }
+  .menu-head:first-child { padding-top: 2px; }
+  .hue { width: 8px; height: 8px; border-radius: 50%; flex: none; margin: 0 3px; }
+  .dl { margin-left: auto; display: inline-flex; opacity: 0.75; padding-left: 10px; }
+  #voice-menu { min-width: 232px; max-height: 48vh; overflow-y: auto; }
 
   #now { display: none; margin-top: 8px; }
   body.active #now { display: block; }
@@ -202,7 +211,37 @@ export function panelHtml(cspSource: string): string {
   /* Starting an agent: one play button, and the mode beside it; which agent it runs is a command away. */
   #agent-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   #agent-start { height: 26px; padding: 0 10px; }
+  #voice-status { font-size: 12px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+  /* Sound: icon toggles that show their state, right-aligned on Start's row; their names are in their tips. */
+  #sound { display: flex; gap: 8px; margin-left: auto; position: relative; }
+  .seg { display: inline-flex; border-radius: 5px; box-shadow: inset 0 0 0 1px var(--hair); }
+  .seg button { border-radius: 0; }
+  .seg button:first-child { border-radius: 5px 0 0 5px; }
+  .seg button:last-child { border-radius: 0 5px 5px 0; }
+  .seg button + button { box-shadow: inset 1px 0 0 var(--hair); }
+  button.toggle { height: 24px; padding: 0 8px; color: var(--muted); }
+  button.toggle:hover:not(:disabled) { color: var(--fg); background: var(--vscode-toolbar-hoverBackground, var(--soft)); }
+  button.toggle[aria-pressed="true"] { color: var(--fg); background: var(--vscode-toolbar-hoverBackground, var(--soft)); }
+  #voice-pick { padding: 0 4px; }
+  /* Words show only when something needs saying, on a line of their own under the toggles. */
+  #voice-status { flex-basis: 100%; }
+  #voice-status:empty { display: none; }
+  /* Too narrow for one line: play stays left, the mode takes the right, and the voice drops to
+     its own line, instead of huddling at the right edge. */
+  @media (max-width: 319px) {
+    #mode-wrap { margin-left: auto; }
+    #sound { flex-basis: 100%; margin-left: 0; justify-content: space-between; }
+  }
+  /* With the voice speaking, the band's big words go: the eyes belong on the code. A command
+     stays: allowing it is a button to press, and nothing plays until it's pressed. */
+  body.voice :is(#now-text, #now-ref) { display: none; }
+  body.voice #now:not(:has(#run.on)) { display: none; }
+  body:is(.active.voice) #main { min-height: 0; }
+  :is(#voice, #voice-toggle) .speaker-on { display: none; }
+  body.voice-enabled :is(#voice, #voice-toggle) .speaker-on { display: block; }
+  body.voice-enabled :is(#voice, #voice-toggle) .speaker-off { display: none; }
+  body.voice-enabled #voice { color: var(--fg); background: var(--vscode-toolbar-hoverBackground, var(--soft)); }
   .entry.tool { font-family: var(--mono); font-size: 11.5px; color: var(--faint); }
 
   #composer { display: none; margin-top: 12px; }
@@ -281,11 +320,12 @@ export function panelHtml(cspSource: string): string {
       <div id="head">
         <div id="status"><span id="dot" class="dot off"></span><span id="status-text">No session</span><span id="mode-label"><span id="mode-icon"></span><span id="mode-word"></span></span></div>
         <div id="controls">
+          <button id="voice" class="quiet" aria-label="Voice" data-tip="Hear the agent instead of reading it">${ICONS.speaker}${ICONS.speakerOff}</button>
           <button id="pause" class="quiet" aria-label="Pause" data-tip="Pause (Space)" aria-keyshortcuts="Space">${ICONS.pause}${ICONS.resume}</button>
           <button id="interrupt" class="quiet" aria-label="Interrupt" data-tip="Interrupt">${ICONS.stop}</button>
           <button id="turn" class="quiet" aria-label="My turn" data-tip="Take the turn: you drive, the agent navigates">${ICONS.swap}<span id="turn-label">My turn</span></button>
           <div id="speed-wrap">
-            <button id="speed" class="quiet" aria-haspopup="menu" aria-expanded="false" data-tip="Playback speed">1.0×</button>
+            <button id="speed" class="quiet" aria-haspopup="menu" aria-expanded="false" data-tip="Playback speed: the typing, and the voice up to 2×">1.0×</button>
             <div id="speed-menu" role="menu" aria-label="Playback speed" hidden>${speeds}</div>
           </div>
           <button id="end" class="quiet" aria-label="End the session" data-tip="End the session">${ICONS.exit}</button>
@@ -320,6 +360,14 @@ export function panelHtml(cspSource: string): string {
               <button role="menuitemradio" aria-checked="false" data-mode="learn-try" aria-label="Learn: Let me try">${ICONS.pencil}<span class="mode-text"><span>Learn · Let me try</span><span class="mode-desc">You drive; the agent navigates</span></span></button>
             </div>
           </div>
+          <div id="sound" role="group" aria-label="Sound">
+            <div class="seg">
+              <button id="voice-toggle" class="toggle" aria-label="Voice" aria-pressed="false">${ICONS.speaker}${ICONS.speakerOff}</button>
+              <button id="voice-pick" class="toggle" aria-label="Choose a voice" aria-haspopup="menu" aria-expanded="false" data-tip="Choose whose voice it is">${ICONS.chevron}</button>
+            </div>
+            <div id="voice-menu" role="menu" aria-label="Choose a voice" hidden></div>
+          </div>
+          <span id="voice-status"></span>
         </div>
       </div>
     </div>
@@ -345,6 +393,7 @@ export function panelHtml(cspSource: string): string {
     idle: $("idle"), idleTitle: $("idle-title"), idleSummary: $("idle-summary"), idleText: $("idle-text"),
     agentStart: $("agent-start"),
     modeBtn: $("mode-btn"), modeMenu: $("mode-menu"), modeCurrent: $("mode-current"), modeIcon: $("mode-icon"), modeWord: $("mode-word"),
+    voice: $("voice"), voiceToggle: $("voice-toggle"), voicePick: $("voice-pick"), voiceMenu: $("voice-menu"), voiceStatus: $("voice-status"),
     reply: $("reply"), send: $("send"), attach: $("attach"), attachRef: $("attach-ref"), attachX: $("attach-x"),
     run: $("run"), runLabel: $("run-label"), runCmd: $("run-cmd"), runGo: $("run-go"), runProgram: $("run-program"), runAll: $("run-all"), runSkip: $("run-skip"),
     history: $("history"), tip: $("tip"),
@@ -352,6 +401,7 @@ export function panelHtml(cspSource: string): string {
   /** What the panel says with nothing going on. */
   const IDLE_INTRO = ui.idleText.innerHTML;
   let active = false, turn = "agent", paused = false, replaying = false;
+  let voice = { enabled: false, state: "off", voice: "af_heart" };   // the voice, as the extension last reported it
   let state = null;     // the agent's state, as the extension last reported it
   let ahead = 0;        // batches written and waiting behind the one playing
   let working = false;  // the agent is at work between its calls: thinking, or writing ahead
@@ -384,7 +434,7 @@ export function panelHtml(cspSource: string): string {
     return el;
   }
 
-  function addAgent(html) { add(entry("agent", html)); }
+  function addAgent(html) { return add(entry("agent", html)); }
 
   function addDivider(text) { add(entry("divider")).textContent = text; }
 
@@ -442,8 +492,18 @@ export function panelHtml(cspSource: string): string {
     el.classList.add("arrive");
   }
 
+  const voiceReady = () => voice.enabled && voice.state === "ready";
+
   function setNow(text) {
     if (current !== null) addAgent(rich(current));
+    current = null;
+    // Spoken words go straight to the history: the band keeps none of them big.
+    if (voiceReady()) {
+      const el = addAgent(rich(text));
+      if (pointed) el.append(" ", pointed);
+      pointed = null;
+      return;
+    }
     current = text;
     ui.now.className = "";
     ui.now.innerHTML = rich(text);
@@ -451,6 +511,35 @@ export function panelHtml(cspSource: string): string {
     ui.ref.replaceChildren(...(pointed ? [pointed] : []));
     pointed = null;
     arrive(ui.now);
+  }
+
+  function setVoice(e) {
+    const wasReady = voiceReady();
+    voice = e;
+    document.body.classList.toggle("voice", voiceReady());
+    document.body.classList.toggle("voice-enabled", e.enabled);
+    ui.voiceToggle.setAttribute("aria-pressed", String(e.enabled));
+    // Only what needs saying shows in the row: loading and failing. The rest is in the tip.
+    const words = !e.enabled ? "" : e.state === "loading" ? "Loading voice…" : e.state === "error" ? (e.detail || "Voice failed. Words show here.") : "";
+    ui.voiceStatus.textContent = words;
+    ui.voiceStatus.dataset.tip = words;
+    const tip = !e.enabled ? "Voice off: hear the agent instead of reading it" : e.state === "ready" ? "Voice on: it speaks, and its words land in the history. Click to turn it off" : "Voice on: click to turn it off";
+    setTip(ui.voice, tip);
+    setTip(ui.voiceToggle, tip);
+    if (voiceReady() && !wasReady && current !== null) {
+      addAgent(rich(current));
+      current = null;
+    }
+    syncTip();
+  }
+
+  // The panel's own sound, for the voice menu's samples: made on first use, since a webview may
+  // only start sound after a click or key of its own.
+  let audio = null;
+  function panelAudio() {
+    audio ??= new AudioContext();
+    if (audio.state === "suspended") audio.resume().catch(() => {});
+    return audio;
   }
 
   // The reading pause fills a ring around the status dot.
@@ -654,6 +743,8 @@ export function panelHtml(cspSource: string): string {
         return;
       case "focusReply": ui.reply.focus(); return;
       case "modeChoice": setModeChoice(e); return;
+      case "voiceState": setVoice(e); return;
+      case "voiceChoices": setVoiceChoices(e); return;
       case "openMenu": if (!document.body.classList.contains("active")) menuCtl[e.menu]?.open(); return;
 
       case "speed": {
@@ -717,14 +808,21 @@ export function panelHtml(cspSource: string): string {
   const decide = (run, allow) => { if (runId !== null) vscode.postMessage({ type: "runDecision", id: runId, run, allow }); };
   ui.runGo.onclick = () => decide(true);
   ui.agentStart.onclick = () => vscode.postMessage({ type: "agentStart" });
+  ui.voice.onclick = () => vscode.postMessage({ type: "voiceToggle" });
+  ui.voiceToggle.onclick = () => vscode.postMessage({ type: "voiceToggle" });
 
   ui.runProgram.onclick = () => decide(true, "program");
   ui.runAll.onclick = () => decide(true, "all");
   ui.runSkip.onclick = () => decide(false);
   ui.end.onclick = () => vscode.postMessage({ type: "end" });
 
-  // Small menus that open here in the panel (speed, mode): one button each, one
+  // Small menus that open here in the panel (speed, mode, voice): one button each, one
   // open at a time, and each shifted back inside when it would run off the panel's edge.
+  const menuSvg = (paths) => '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + "</svg>";
+  const MENU_ICONS = {
+    download: menuSvg('<path d="M12 4v10m0 0l-4-4m4 4l4-4M4 19h16"/>'),
+    mic: menuSvg('<rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21"/>'),
+  };
   const menus = [];
   function placeMenu(menu) {
     menu.style.transform = "";
@@ -734,12 +832,13 @@ export function panelHtml(cspSource: string): string {
     if (r.left + dx < 6) dx = 6 - r.left;
     if (dx) menu.style.transform = "translateX(" + dx + "px)";
   }
-  function wireMenu(btn, menu, pick) {
+  function wireMenu(btn, menu, pick, onOpen) {
     const ctl = {
       btn, menu,
       close() { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); btn.classList.remove("on"); },
       open() {
         for (const m of menus) if (m !== ctl) m.close();
+        if (onOpen) onOpen();
         menu.hidden = false;
         placeMenu(menu);
         btn.setAttribute("aria-expanded", "true");
@@ -767,9 +866,96 @@ export function panelHtml(cspSource: string): string {
     for (const m of menus) if (!m.menu.hidden) { m.close(); m.btn.focus(); }
   });
 
+  // Rows get a colored dot from their name, the same color every time: something to recognize a
+  // voice by where an icon would only repeat itself.
+  const HUES = ["#e8875b", "#e5c15c", "#8fc97a", "#5cc9b8", "#5ea8e0", "#9a86e0", "#e07ab0", "#c96f5e"];
+  const hueFor = (id) => { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0; return HUES[h % HUES.length]; };
+  function menuHead(text) {
+    const d = document.createElement("div");
+    d.className = "menu-head";
+    d.textContent = text;
+    return d;
+  }
+  function menuRow(o) {
+    const b = document.createElement("button");
+    b.setAttribute("role", "menuitemradio");
+    b.setAttribute("aria-checked", String(!!o.checked));
+    Object.assign(b.dataset, o.data);
+    if (o.icon) { const s = document.createElement("span"); s.style.display = "inline-flex"; s.innerHTML = o.icon; b.append(s); }
+    else if (o.hue) { const s = document.createElement("span"); s.className = "hue"; s.style.background = o.hue; b.append(s); }
+    const text = document.createElement("span");
+    text.className = "mode-text";
+    const name = document.createElement("span");
+    name.textContent = o.name;
+    text.append(name);
+    if (o.tag) { const t = document.createElement("span"); t.className = "mode-desc"; t.textContent = o.tag; text.append(t); }
+    b.append(text);
+    if (o.download) { const s = document.createElement("span"); s.className = "dl"; s.innerHTML = MENU_ICONS.download; b.append(s); }
+    return b;
+  }
+  const voiceRow = (e, v) => ({
+    data: { model: v.model, voice: v.voice, ...(v.preview ? { preview: v.preview } : {}) },
+    checked: e.current.model === v.model && e.current.voice === v.voice,
+    hue: hueFor(v.model + ":" + (v.voice || "own")),
+    name: v.name,
+    tag: v.download ? v.tag + " · fetched when first used" : v.tag,
+    download: v.download,
+  });
+  function setVoiceChoices(e) {
+    const parts = [menuHead("Kokoro · light, works everywhere")];
+    for (const v of e.kokoro) parts.push(menuRow(voiceRow(e, v)));
+    parts.push(menuHead(e.chatterboxNote));
+    for (const v of e.chatterbox) parts.push(menuRow(voiceRow(e, v)));
+    parts.push(menuRow({ data: { action: "recording" }, icon: MENU_ICONS.mic, name: "Sound like a recording…", tag: "Your own voice: 10+ seconds of one person speaking clearly" }));
+    ui.voiceMenu.replaceChildren(...parts);
+  }
+
+  // Each voice is heard as the menu moves to it: its shipped sample starts at once, and
+  // moving on (or away) cuts it short, so voices are compared back to back by ear.
+  const voiceBanks = {};   // each voice's sample, decoded once, by URL
+  let voiceSource = null, voiceRun = 0;
+  function stopVoice() {
+    voiceRun++;
+    if (voiceSource) { try { voiceSource.stop(); } catch { /* already over */ } voiceSource = null; }
+  }
+  async function hearVoice(url) {
+    stopVoice();
+    if (!url) return;
+    const run = voiceRun;
+    panelAudio();
+    let buffer = voiceBanks[url];
+    if (!buffer) {
+      try { buffer = await audio.decodeAudioData(await (await fetch(url)).arrayBuffer()); } catch { return; }
+      voiceBanks[url] = buffer;
+    }
+    if (run !== voiceRun || audio.state !== "running") return;
+    voiceSource = audio.createBufferSource();
+    voiceSource.buffer = buffer;
+    voiceSource.connect(audio.destination);
+    voiceSource.onended = () => { if (run === voiceRun) voiceSource = null; };
+    voiceSource.start();
+  }
+
   wireMenu(ui.speed, ui.speedMenu, (b) => vscode.postMessage({ type: "speed", value: Number(b.dataset.speed) }));
   const modeCtl = wireMenu(ui.modeBtn, ui.modeMenu, (b) => vscode.postMessage({ type: "modeSet", id: b.dataset.mode }));
-  const menuCtl = { mode: modeCtl };
+  const voiceCtl = wireMenu(ui.voicePick, ui.voiceMenu, (b) => {
+    stopVoice();
+    if (b.dataset.action === "recording") vscode.postMessage({ type: "voiceRecording" });
+    else vscode.postMessage({ type: "voiceSet", model: b.dataset.model, voice: b.dataset.voice });
+  }, () => panelAudio());
+  const closeVoiceMenu = voiceCtl.close;
+  voiceCtl.close = () => { stopVoice(); closeVoiceMenu(); };
+  let heardVoice = null;
+  const hearVoiceRow = (e) => {
+    const b = e.target.closest("button");
+    if (!b || b === heardVoice) return;
+    heardVoice = b;
+    void hearVoice(b.dataset.preview || "");
+  };
+  ui.voiceMenu.addEventListener("mouseover", hearVoiceRow);
+  ui.voiceMenu.addEventListener("focusin", hearVoiceRow);
+  ui.voiceMenu.addEventListener("mouseleave", () => { heardVoice = null; stopVoice(); });
+  const menuCtl = { mode: modeCtl, voice: voiceCtl };
 
   // Tooltips: an element's data-tip shows under it after a moment's hover, or at once while one is
   // showing or just was, the way VS Code's own hovers do; and on keyboard focus. A click hides it.

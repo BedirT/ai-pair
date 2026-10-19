@@ -102,7 +102,7 @@ const Beat = z
       .string()
       .optional()
       .describe(
-        "What you say to the programmer about this beat's actions: what you're doing, why, and how your code does it. It's about your code and your choices, not how the language or its libraries work (unless the programmer asked to learn them). Explain the code, don't recite it. One to three sentences; `backticks` render as code. It's read beside the code while it plays.",
+        "What you say to the programmer about this beat's actions: what you're doing, why, and how your code does it. It's about your code and your choices, not how the language or its libraries work (unless the programmer asked to learn them). Explain the code, don't recite it. First person, contractions, one to three sentences, the way you'd talk at their desk. Write it for how it reaches them, which your reports tell you as `voice`. Voice on, it's spoken: write it for the ear, in plain words with no markdown or backticks, and say code the way a programmer says it out loud (\"dunder add\", \"req dot body\", \"the todos array\", \"a for loop over the lines\"). Voice off, it's read beside the code while it plays: keep it short, and put names in `backticks`.",
       ),
     do: z
       .array(Action)
@@ -152,7 +152,7 @@ function combined(input: unknown): string | undefined {
 export const TOOLS = {
   start: {
     description:
-      "Start a live pair programming session in the programmer's editor. Call this as soon as the programmer asks to pair, before reading their code: they're waiting from that moment. Then, before you read or plan, send a `step` with one beat, just a `say`, telling them what you'll look at first, like \"Let me look around your project first.\", so they hear from you at once. The result says which pairing mode the programmer picked (build or learn), and includes the pairing guide and the mode's page: read them and follow them for the whole session. From then on, everything you do through `step` appears in their editor at a human pace, with your narration.",
+      "Start a live pair programming session in the programmer's editor. Call this as soon as the programmer asks to pair, before reading their code: they're waiting from that moment. Then, before you read or plan, send a `step` with one beat, just a `say`, telling them what you'll look at first, like \"Let me look around your project first.\", so they hear from you at once. The result says whether your voice is on and which pairing mode the programmer picked (build or learn), and includes the pairing guide and the mode's page: read them and follow them for the whole session. From then on, everything you do through `step` appears in their editor at a human pace, with your narration.",
     inputSchema: {
       task: z.string().optional().describe("A short description of what you'll work on, shown to the programmer."),
       cwd: z
@@ -172,7 +172,7 @@ A batch that would fail, e.g. on text that isn't on its line, is rejected at onc
 
 Read every report. It shows each finished batch's code as it now reads, with your cursor marked \`▌\`: check it's what you meant. If a batch was interrupted or failed, or the programmer said or did something, your later batches were discarded; what didn't play is listed as beats, ready to resubmit, starting with what's left of an interrupted beat (its words were already heard). Take what happened into account and re-plan.
 
-When news comes, the programmer waits on you: a \`run\`'s output, a failure, or something they said or did. Answer it fast: first send a batch of one short \`say\` reacting to it, like "Just what we put in." or "Good catch.", before you work out what follows, then write the next batch while it plays. Keep that next batch small, a beat or two, so it comes soon; then go back to full batches.
+When news comes, the programmer waits on you: a \`run\`'s output, a failure, or something they said or did. Answer it fast: first send a batch of one short \`say\` reacting to it, like "Just what we put in." or "Good catch.", before you work out what follows, then write the next batch while it plays. Keep that next batch small, a beat or two, so it comes soon; then go back to full batches. With the voice on, the editor talks while you think: it reads out a \`run\`'s result as it lands (the report quotes what it said), and if you're slow, it says a short "One moment.". Don't say those again; go on from them.
 
 An empty batch waits until your queued batches finish, or a \`run\`'s output or a failure comes back, without waiting for the programmer: use it before acting on a \`run\`'s output.`,
     inputSchema: {

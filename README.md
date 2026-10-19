@@ -89,11 +89,38 @@ account. While you pair:
 | stop it right now          | **Interrupt**, or just edit the code: any edit interrupts. The agent is told at once, and the panel says so until it takes it in             |
 | look around | scroll or switch files. Playback pauses until you **Resume**, which brings you back to the agent's cursor |
 | write a part yourself | **My turn**. The agent becomes the navigator and comments as you type. **Hand back** returns the turn, with your reply if you typed one |
-| change the pace | the speed menu (**1.0×**), from 0.4× to 3.0× |
+| change the pace            | the speed menu (**1.0×**), from 0.4× to 3.0×. The voice speeds up with it, up to 2×                                                          |
+| hear it, not read it       | turn **Voice** on in the panel. It talks while it types, so your eyes stay on the code; the words still land in the history                  |
 | finish | **End**, or tell the agent you're done. You can pair again anytime |
 
 The cursor's color tells you what the agent is doing. It's yellow and pulsing
-when it's just said something and is waiting for you to read it.
+when it's just said something and is waiting for you to read it — or, with the
+voice on, while it says it.
+
+**Hear it instead of reading it.** Turn **Voice** on in the Pair panel and
+everything the agent says is spoken as it works: the words are spread over
+the typing they explain — a long explanation gets a head start, then talks
+over the typing, so the talking and the typing finish about together. The
+big text in the panel
+goes away, so there's only one thing to watch — the code. The words still
+land in the panel's history. The voice runs on your own machine, so nothing
+is sent anywhere to be spoken, and the typing a sentence explains waits
+until you hear it. The arrow beside **Voice** chooses the model and whose voice it is:
+
+- **Kokoro** (the default), a light speech model that works everywhere.
+  The first turn-on downloads it once into the extension's own storage:
+  about 100 MB of model, in a few hundred MB of runtime. It needs bun or
+  node on the machine, nothing else — no agent has to be installed for
+  the voice to work, and it speaks the same for every agent.
+- **Chatterbox**, more natural. It runs through
+  [uv](https://docs.astral.sh/uv/), which must be installed. On an Apple
+  Silicon Mac it uses the GPU and fetches about 1.3 GB the first time;
+  elsewhere it runs in its original PyTorch form, wants an NVIDIA card
+  to keep up (it works without, only slower), and fetches a few GB. It
+  speaks in its own voice, or in one taken from a recording you pick —
+  only use a voice you have the right to.
+
+Turning the voice off brings the big text back.
 
 **Try it without an agent:** *AI Pair: Play Demo Session* plays a scripted
 session that adds a small API to an Express app, which it creates in
@@ -170,11 +197,18 @@ code --install-extension ai-pair-*.vsix
 
 | Setting | |
 |---|---|
-| `aiPair.speed` | Overall playback speed (the panel's speed menu offers 0.4× to 3.0×). |
+| `aiPair.speed`            | Overall playback speed (the panel's speed menu offers 0.4× to 3.0×). The voice follows it from 1× up to 2×.                                                                                  |
 | `aiPair.agentName` | The name on the agent's cursor. |
 | `aiPair.timing` | Fine-tune any typing or pause duration, e.g. `{ "afterSelectMs": 900, "type": { "wordStartMs": 140 } }`. Every key is in [`timing.ts`](packages/core/src/timing.ts). |
 | `aiPair.confirmCommands` | Ask before each command the agent runs in the terminal (default on). Turned off, the agent's commands run without any prompt, not even its own. |
 | `aiPair.workAheadBatches` | How many batches the agent may write ahead of what you're watching (default 2, at most 10). More means fewer pauses; less means less thrown away when you step in. `0` waits for each batch. |
+
+| `aiPair.voice.enabled` | Speak what the agent says, live, on this machine. Off by default; the panel's **Voice** button flips it. |
+| `aiPair.voice.model` | Which speech model: `kokoro` (default, works everywhere) or `chatterbox` (more natural, needs uv; an Apple Silicon GPU or an NVIDIA card to keep up). |
+| `aiPair.voice.voice` | Whose Kokoro voice it is. |
+| `aiPair.voice.chatterboxVoice` | A recording for Chatterbox to sound like. Empty uses its own voice. |
+| `aiPair.voice.rate` | How fast the voice talks on top of the playback speed (1 is its own pace). |
+| `aiPair.voice.runtimePath` | A bun or node program to run the voice with, if the usual places have none. |
 
 ## Troubleshooting
 
@@ -188,6 +222,14 @@ code --install-extension ai-pair-*.vsix
 - **The terminal Start uses can't find the agent.** The agent's command
   isn't installed, or isn't on the PATH your shell has. Install it, or pick
   _Custom command…_ by the Start button and give its full path.
+- **The voice won't start.** Kokoro is run by bun or node (VS Code's own
+  runtime can't load its native code), and the first turn-on downloads it.
+  Have bun or node on the machine, or set `aiPair.voice.runtimePath`.
+  What it said on its way out is in the _AI Pair Voice_ output channel.
+  Chatterbox needs [uv](https://docs.astral.sh/uv/);
+  away from an Apple Silicon Mac it also wants an NVIDIA card to keep
+  up. If it says it couldn't start from what's already downloaded,
+  turn the voice off and on to fetch it.
 - **After updating the extension,** reload the VS Code window and restart the
   agent.
 

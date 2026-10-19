@@ -153,6 +153,8 @@ export type RunResult = {
   running?: true
   /** The terminal's shell, e.g. `pwsh` or `zsh`, when it's known. */
   shell?: string
+  /** What the voice read out about it as it landed, so the agent goes on from it instead of repeating it. */
+  said?: string
 }
 
 /**
@@ -233,6 +235,11 @@ export type Report = {
   paused?: true
   /** A batch's `run` held until the programmer allows it: nothing after it plays until they answer. */
   confirming?: { id: number; command: string }
+  /**
+   * Whether the programmer hears the agent's `say`s spoken, or reads them: in the session's first
+   * report, and in the next one whenever it changes.
+   */
+  voice?: "on" | "off"
   /**
    * The pairing mode the programmer picked for this session, fixed once it starts: in the
    * session's first report only. "learn" comes with `drive`: who does the work while learning.

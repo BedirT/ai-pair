@@ -7,6 +7,7 @@ import { playDemo } from "./demo"
 import { VsCodeEditor } from "./editor"
 import { NarrationPanel } from "./panel"
 import { AgentStarter, registerServerProvider, setUpAgent, writeLauncher } from "./setup"
+import { VoiceEngine, type VoiceModel } from "./voice"
 
 /** The pairing modes the panel offers: build it, or learn it at three splits of the work. */
 type ModeId = "build" | "learn-show" | "learn-together" | "learn-try"
@@ -72,6 +73,28 @@ export function activate(context: vscode.ExtensionContext): Api {
     choice: () => ({ id: modeId, label: MODES[modeId].label }),
   }
   applyMode()
+  const voice = new VoiceEngine(panel, {
+    extensionPath: context.extensionPath,
+    storagePath: context.globalStorageUri.fsPath,
+    config: () => ({
+      enabled: config().get("voice.enabled", false),
+      model: config().get<VoiceModel>("voice.model", "kokoro"),
+      voice: config().get("voice.voice", "af_heart"),
+      chatterboxVoice: config().get("voice.chatterboxVoice", ""),
+      rate: config().get("voice.rate", 1),
+      pace: speed.get(),
+      runtimePath: config().get("voice.runtimePath", ""),
+    }),
+    setEnabled: (on) => void config().update("voice.enabled", on, vscode.ConfigurationTarget.Global),
+    setVoice: async (model, voice) => {
+      const global = vscode.ConfigurationTarget.Global
+      await config().update(model === "kokoro" ? "voice.voice" : "voice.chatterboxVoice", voice, global)
+      await config().update("voice.model", model, global)
+    },
+  })
+  panel.voice = voice
+  controller.setVoice(voice)
+  if (config().get("voice.enabled", false)) voice.setEnabled(true)
   registerServerProvider(context)
 
   context.subscriptions.push(
@@ -84,6 +107,9 @@ export function activate(context: vscode.ExtensionContext): Api {
     vscode.commands.registerCommand("aiPair.startAgent", () => starter.start()),
     vscode.commands.registerCommand("aiPair.pickStartAgent", () => starter.pick()),
     vscode.commands.registerCommand("aiPair.pickMode", () => panel.openMenu("mode")),
+    vscode.commands.registerCommand("aiPair.toggleVoice", () => voice.toggle()),
+    vscode.commands.registerCommand("aiPair.selectVoice", () => panel.openMenu("voice")),
+    voice,
     editor,
     vscode.window.registerWebviewViewProvider(NarrationPanel.viewId, panel, {
       webviewOptions: { retainContextWhenHidden: true },
@@ -99,6 +125,9 @@ export function activate(context: vscode.ExtensionContext): Api {
         controller.setConfirmCommands(config().get("confirmCommands", true))
       }
       if (e.affectsConfiguration("aiPair.workAheadBatches")) controller.setWorkAhead(config().get("workAheadBatches", 2))
+      if (e.affectsConfiguration("aiPair.voice.enabled")) voice.setEnabled(config().get("voice.enabled", false), true)
+      if (e.affectsConfiguration("aiPair.voice.model")) voice.followModel(true)
+      if (e.affectsConfiguration("aiPair.voice.voice") || e.affectsConfiguration("aiPair.voice.chatterboxVoice")) panel.showVoiceStatus(voice.status())
     }),
     vscode.commands.registerCommand("aiPair.playDemo", () => {
       if (!vscode.workspace.workspaceFolders?.length) {

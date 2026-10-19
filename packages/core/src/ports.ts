@@ -105,5 +105,29 @@ export interface PanelPort {
   post(event: PanelEvent): void
 }
 
+/**
+ * The agent's voice, when there is one: it speaks a `say` out loud instead of leaving it to be read.
+ * `speak` settles when the words have been spoken, or dropped, or stopped; it never rejects playback.
+ * `spanMs` is how long the work the `say` covers will take to play: spread the words across it, so
+ * talking and typing run together and finish about together. `onStart` is called once, when the
+ * first words are heard — or when they never will be (dropped, stopped, failed) — since making
+ * speech takes a moment, and the typing a `say` covers must not run ahead of its words.
+ * `signal` takes back just these words, cut off if they're sounding: they've gone stale.
+ */
+export interface VoicePort {
+  /** Loaded and able to speak now. Not ready, playback falls back to the reading pause. */
+  readonly ready: boolean
+  /** The programmer turned it on: they listen to the agent's words, even while the voice still loads. */
+  readonly enabled: boolean
+  speak(text: string, spanMs?: number, onStart?: () => void, signal?: AbortSignal): Promise<void>
+  /**
+   * Starts making a `say`'s speech before it is spoken: called when its batch is queued, with the
+   * span `speak` will get, so the words are ready when the batch starts. `stop` drops what's made.
+   */
+  prepare(text: string, spanMs: number): void
+  /** Cuts off what is being said and drops what is queued: interrupted words are stale words. */
+  stop(): void
+}
+
 /** A change to a document, in the coordinates of the text before it. */
 export type Change = { offset: number; deleteLength: number; text: string }

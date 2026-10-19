@@ -12,6 +12,7 @@ export type {
   Ref,
   RunOptions,
   SharedSelection,
+  VoicePort,
 } from "./ports"
 export { resolveSpan, resolveSpot } from "./places"
 export { terminalText } from "./text"

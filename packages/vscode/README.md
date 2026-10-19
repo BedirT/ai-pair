@@ -86,7 +86,14 @@ the start, so you only say what the task is.
 - **Look around:** scrolling or switching files pauses playback. **Resume**
   brings you back.
 - **My turn / Hand back:** write a part yourself while the agent navigates.
-- **The speed menu (1.0×):** the pace, from 0.4× to 3.0×.
+- **The speed menu (1.0×):** the pace, from 0.4× to 3.0×. The voice speeds up
+  with it, up to 2×.
+- **Voice:** hear it instead of reading it. Turn **Voice** on in the panel and
+  what the agent says is spoken as it works, on your own machine, while the
+  words still land in the history. Your eyes stay on the code. **Pick a
+  voice** offers Kokoro (light, works everywhere) or Chatterbox (more
+  natural; needs uv, and an Apple Silicon GPU or an NVIDIA card to keep
+  up; a big one-time fetch).
 
 **AI Pair: Play Demo Session** shows what it's like without an agent.
 
@@ -99,3 +106,4 @@ the start, so you only say what the task is.
   terminal (on by default).
 - `aiPair.workAheadBatches`: how many batches the agent may write ahead of
   what you're watching (default 2).
+- `aiPair.voice.*`: the voice — on or off, whose it is, and how fast it talks.
