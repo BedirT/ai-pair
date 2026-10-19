@@ -4,6 +4,12 @@ import * as vscode from "vscode"
 import type { Controller, PanelEvent, PanelPort, Ref, SharedSelection } from "@ai-pair/core"
 import { panelHtml } from "./panelHtml"
 
+/** What the panel asks of its Start button: run the chosen agent in a terminal. Which agent is
+ *  chosen rarely, by command, so the panel doesn't carry a picker for it. */
+export type StarterPort = {
+  start(): void
+}
+
 /** Messages from the webview. */
 type FromPanel =
   | { type: "ready" }
@@ -22,6 +28,7 @@ type FromPanel =
   | { type: "command"; command: string }
   | { type: "speed"; value: number }
   | { type: "runDecision"; id: number; run: boolean; remember?: boolean }
+  | { type: "agentStart" }
 
 const MAX_LOG = 400
 
@@ -31,6 +38,7 @@ const PANEL_COMMANDS: ReadonlySet<string> = new Set(["aiPair.playDemo", "aiPair.
 export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
   static readonly viewId = "aiPair.narration"
   controller?: Controller
+  starter?: StarterPort
   private view?: vscode.WebviewView
   /** Everything posted so far, replayed when the view is (re)created. */
   private readonly log: PanelEvent[] = []
@@ -99,6 +107,9 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
         c.userMessage(m.text, m.attach ? this.selection.current() : undefined)
         return
       }
+      case "agentStart":
+        this.starter?.start()
+        return
       case "draft":
         // Typing a reply pauses playback, the way a pair stops when you start talking.
         if (!c?.isActive) return

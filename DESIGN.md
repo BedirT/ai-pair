@@ -86,7 +86,14 @@ Layout, top to bottom:
 
 Without a session, the band has no header: it says there's no session and
 how to start one, and after a session, how it ended, with the agent's
-summary. In every message, code spans that name a file (`game.ts`,
+summary. Getting an agent going is one play button: it runs the chosen agent in
+a free terminal already standing in the workspace, or a new one there.
+Which agent that is changes rarely, so it's not in the panel; the
+command _AI Pair: Choose Agent to Start_ picks it (any of the set-up
+agents, or a custom command). The panel never
+hosts an agent: each stays its own app, with its own screen, model and
+thinking settings, and Start treats them all the same.
+In every message, code spans that name a file (`game.ts`,
 `src/server.ts`) open it, found by name if it isn't a path from the
 workspace's root, and URLs open in the browser. File and code references are
 mono and quietly underlined, taking the link color only on hover.

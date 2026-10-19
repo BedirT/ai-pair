@@ -1,11 +1,12 @@
 import * as os from "node:os"
+import * as path from "node:path"
 import * as vscode from "vscode"
 import { Bridge, Controller } from "@ai-pair/core"
 import { discoveryDir } from "@ai-pair/protocol"
 import { playDemo } from "./demo"
 import { VsCodeEditor } from "./editor"
 import { NarrationPanel } from "./panel"
-import { registerServerProvider, setUpAgent, writeLauncher } from "./setup"
+import { AgentStarter, registerServerProvider, setUpAgent, writeLauncher } from "./setup"
 
 /** Returned from `activate`, for integration tests. */
 export type Api = { controller: Controller; playDemo: () => Promise<void>; launcher: string; ready: Promise<void> }
@@ -39,6 +40,8 @@ export function activate(context: vscode.ExtensionContext): Api {
   const ready = bridge.start()
   ready.catch((e: unknown) => void vscode.window.showErrorMessage(`AI Pair couldn't start its local server: ${String(e)}`))
   const launcher = writeLauncher(context.extensionPath)
+  const starter = new AgentStarter(launcher, context.globalState, path.join(context.extensionPath, "dist", "ompExtension.js"))
+  panel.starter = starter
   registerServerProvider(context)
 
   context.subscriptions.push(
@@ -48,6 +51,8 @@ export function activate(context: vscode.ExtensionContext): Api {
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => bridge.writeDiscovery()),
     vscode.commands.registerCommand("aiPair.setUpAgent", () => setUpAgent(launcher)),
+    vscode.commands.registerCommand("aiPair.startAgent", () => starter.start()),
+    vscode.commands.registerCommand("aiPair.pickStartAgent", () => starter.pick()),
     editor,
     vscode.window.registerWebviewViewProvider(NarrationPanel.viewId, panel, {
       webviewOptions: { retainContextWhenHidden: true },

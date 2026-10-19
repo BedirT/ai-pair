@@ -70,7 +70,8 @@ function renderBatch(b: BatchResult): string {
   if (b.error) parts.push(renderError(b.error))
   if (b.unplayed) {
     // Agents working ahead come to think of what they queued as done, and answer questions about
-    // code that was never typed. Say outright that none of it happened.
+    // code that was never typed. Say outright that none of it happened. history.ts reads these
+    // lines back, one beat as JSON on each, to cut the `step` call down to what played.
     const label = b.error && b.error.kind !== "command_failed" ? "Not played, starting with the beat that failed" : "Not played"
     const never = "never typed or said: it isn't in the file, and the programmer hasn't seen or heard it"
     parts.push([`${label} (${never}):`, ...b.unplayed.map((beat) => `  ${JSON.stringify(beat)}`)].join("\n"))

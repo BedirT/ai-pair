@@ -60,6 +60,18 @@
         "category": "AI Pair"
       },
       {
+        "command": "aiPair.startAgent",
+        "title": "Start Agent",
+        "category": "AI Pair",
+        "icon": "$(play)"
+      },
+      {
+        "command": "aiPair.pickStartAgent",
+        "title": "Choose Agent to Start",
+        "category": "AI Pair",
+        "icon": "$(chevron-down)"
+      },
+      {
         "command": "aiPair.playDemo",
         "title": "Play Demo Session",
         "category": "AI Pair"
@@ -134,7 +146,7 @@
           "type": "boolean",
           "default": true,
           "scope": "application",
-          "markdownDescription": "Ask in the Pair panel before running each command the agent plays in the terminal (`run`). Turning this off lets the agent run commands without Claude Code's own permission prompt."
+          "markdownDescription": "Ask in the Pair panel before running each command the agent plays in the terminal (`run`). Turning this off lets the agent run commands without its own permission prompt."
         },
         "aiPair.workAheadBatches": {
           "type": "integer",

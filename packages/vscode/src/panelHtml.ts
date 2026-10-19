@@ -167,6 +167,10 @@ export function panelHtml(cspSource: string): string {
   #idle-summary:empty { display: none; }
   #idle-text { margin-top: 4px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 
+  /* Starting an agent: one play button; which agent it runs is a command away. */
+  #agent-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  #agent-start { height: 26px; padding: 0 10px; }
+
   .entry.tool { font-family: var(--mono); font-size: 11.5px; color: var(--faint); }
 
   #composer { display: none; margin-top: 12px; }
@@ -271,7 +275,10 @@ export function panelHtml(cspSource: string): string {
       <div id="idle">
         <div id="idle-title">No active session</div>
         <div id="idle-summary"></div>
-        <div id="idle-text">Ask your agent to pair with you, or run <a class="command" data-command="aiPair.playDemo">AI Pair: Play Demo Session</a>. First time? Run <a class="command" data-command="aiPair.setUpAgent">AI Pair: Set Up Agent</a>.</div>
+        <div id="idle-text">Start your agent in a terminal here, ask one you already run to pair with you, or run <a class="command" data-command="aiPair.playDemo">AI Pair: Play Demo Session</a>. First time? Run <a class="command" data-command="aiPair.setUpAgent">AI Pair: Set Up Agent</a>.</div>
+        <div id="agent-bar">
+          <button id="agent-start" class="primary" aria-label="Start agent" data-tip="Start your agent in a free terminal standing here, or a new one. Which agent Start runs: AI Pair: Choose Agent to Start">${ICONS.play}</button>
+        </div>
       </div>
     </div>
     <div id="composer">
@@ -293,11 +300,14 @@ export function panelHtml(cspSource: string): string {
     band: $("band"), dot: $("dot"), status: $("status-text"), pause: $("pause"), interrupt: $("interrupt"),
     turn: $("turn"), turnLabel: $("turn-label"), speed: $("speed"), speedMenu: $("speed-menu"), end: $("end"),
     now: $("now-text"), ref: $("now-ref"),
-    idleTitle: $("idle-title"), idleSummary: $("idle-summary"), idleText: $("idle-text"),
+    idle: $("idle"), idleTitle: $("idle-title"), idleSummary: $("idle-summary"), idleText: $("idle-text"),
+    agentStart: $("agent-start"),
     reply: $("reply"), send: $("send"), attach: $("attach"), attachRef: $("attach-ref"), attachX: $("attach-x"),
     run: $("run"), runLabel: $("run-label"), runCmd: $("run-cmd"), runGo: $("run-go"), runAlways: $("run-always"), runSkip: $("run-skip"),
     history: $("history"), tip: $("tip"),
   };
+  /** What the panel says with nothing going on. */
+  const IDLE_INTRO = ui.idleText.innerHTML;
   let active = false, turn = "agent", paused = false, replaying = false;
   let state = null;     // the agent's state, as the extension last reported it
   let ahead = 0;        // batches written and waiting behind the one playing
@@ -514,15 +524,17 @@ export function panelHtml(cspSource: string): string {
           ui.ref.innerHTML = "";
           pointed = null;
           addDivider("Session started" + (e.task ? ": " + e.task : ""));
+          ui.idle.classList.remove("ended");
           setActive(true);
         } else {
           if (current !== null) addAgent(rich(current));
           current = null;
           const why = { agent: "The agent ended the session", user: "You ended the session", disconnected: "The agent disconnected" }[e.reason];
           addDivider(why);
+          ui.idle.classList.add("ended");
           ui.idleTitle.textContent = e.reason === "disconnected" ? "The agent disconnected" : "Session ended";
           ui.idleSummary.innerHTML = e.summary ? rich(e.summary) : "";
-          ui.idleText.textContent = "Ask your agent to pair again.";
+          ui.idleText.textContent = "Ask your agent to pair again, or start one here.";
           setActive(false);
         }
         return;
@@ -631,6 +643,7 @@ export function panelHtml(cspSource: string): string {
   ui.attachX.onclick = () => { selectionDismissed = true; syncAttach(); };
   const decide = (run, remember) => { if (runId !== null) vscode.postMessage({ type: "runDecision", id: runId, run, remember }); };
   ui.runGo.onclick = () => decide(true, false);
+  ui.agentStart.onclick = () => vscode.postMessage({ type: "agentStart" });
   ui.runAlways.onclick = () => decide(true, true);
   ui.runSkip.onclick = () => decide(false, false);
   ui.end.onclick = () => vscode.postMessage({ type: "end" });

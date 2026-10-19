@@ -38,26 +38,35 @@ through code you don't know yet.
 
 ![The agent walks through a function line by line, highlighting each line and explaining it in the Pair panel](media/explain-line-by-line.gif)
 
-It works in VS Code, with the coding agent you already use. Setup is built in
-for Claude Code, Codex, OpenCode, Gemini CLI, Cursor and GitHub Copilot, and
-any agent that supports MCP can be connected by hand.
+It works in VS Code, with the agent you already use. Setup is built in for
+OMP, Claude Code, Codex, OpenCode, Gemini CLI, Cursor and GitHub Copilot,
+and any agent that supports MCP can be connected by hand. The panel's
+**Start** button runs the agent you picked in a terminal in the project —
+every agent is treated the same, and stays its own app.
 
 **Note:** It works best with strong models; weaker ones tend to struggle with
 this way of working.
 
 ## How to use it
 
-Once the extension is [installed](#install) and
-[connected to your agent](#connect-your-agent), keep using your agent as usual.
-When you want to pair:
+Once the extension is [installed](#install):
 
-1. Open the project in VS Code, and start your agent **in the same folder** (or
-   a subfolder of it).
-2. Ask it to pair: *"Let's pair on adding a settings page."* In Claude Code,
-   you can also run `/mcp__pair__start`. If you want to learn the technology
-   too, say so: *"…I'm new to Svelte, explain as you go."*
-3. The **Pair** panel opens in the secondary side bar, and the agent's cursor
-   appears in your editor.
+1. Open the project in VS Code and open the **Pair** panel.
+2. Press **Start**. It runs your agent (OMP,
+   Claude Code, Codex, OpenCode, Gemini CLI, or a command of your own,
+   flags and all; which one is picked with _AI Pair: Choose Agent to
+   Start_) in a free terminal already standing
+   in the project, or a new one there; the first time, it also gives that agent the pair server, so
+   there is nothing to set up by hand. If your agent is already running
+   somewhere, skip this and [connect it](#connect-your-agent) once instead.
+
+3. In the agent's terminal, ask it to pair: _"Let's pair on adding a
+   settings page."_ In Claude Code, you can also run `/mcp__pair__start`.
+   (An agent you started yourself must run **in the
+   same folder** as the project, or a subfolder of it.)
+
+4. The **Pair** panel opens in the secondary side bar, and the agent's
+   cursor appears in your editor.
 
 Anything you say or edit interrupts the agent, so its next move takes it into
 account. While you pair:
@@ -135,15 +144,16 @@ code --install-extension ai-pair-*.vsix
 
    | Agent | Where |
    |---|---|
+   | **OMP**                                                                          | `~/.omp/agent/mcp.json` (a named profile's folder when one is in use). The panel's **Start** does this for you when it starts OMP |
    | **Claude Code** (the CLI, the IDE extensions, the Claude desktop app's Code tab) | `claude mcp add --scope user`, or `~/.claude.json` without the `claude` command |
    | **Codex** (the CLI, the IDE extension, the app) | `~/.codex/config.toml` (or in `$CODEX_HOME`) |
    | **OpenCode** | `~/.config/opencode/opencode.json` (`.jsonc` if you have one), on Windows too |
    | **Gemini CLI** | `~/.gemini/settings.json` |
    | **Cursor** | `~/.cursor/mcp.json` |
    | **Another agent** | copies an MCP server configuration to the clipboard: a stdio server named `pair` running the launcher |
-
    **GitHub Copilot** in VS Code needs none of this: the extension gives it
    the `pair` server itself.
+
 3. **Restart your agent** so it picks up the new server.
 
 ## Settings
@@ -165,6 +175,9 @@ code --install-extension ai-pair-*.vsix
   it up. *AI Pair: Set Up Agent* marks the agents that are set up. With
   Claude Code, `claude mcp list` should show `pair`. With Copilot, `pair`
   should be in *MCP: List Servers*; start it there if it isn't running.
+- **The terminal Start uses can't find the agent.** The agent's command
+  isn't installed, or isn't on the PATH your shell has. Install it, or pick
+  _Custom command…_ by the Start button and give its full path.
 - **After updating the extension,** reload the VS Code window and restart the
   agent.
 

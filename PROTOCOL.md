@@ -511,7 +511,10 @@ finishes it exactly. Cut after the `▌`, it's `▌` and the rest after it, whic
 restores the text but leaves the cursor as many characters past the inside of
 the pair as had been typed after the `▌`; the code shows where the cursor is.
 
-Agents go by the "Not played … never typed or said" report text above.
+For agents started from the panel, the harness rewrites the model's view of
+an interrupted `step` call back to only the beats that played, so the call
+reads as if the rest was never sent. The saved session keeps the original.
+Other agents rely on the "Not played … never typed or said" report text above.
 
 Internally, the editor produces a structured report, which the relay renders:
 
