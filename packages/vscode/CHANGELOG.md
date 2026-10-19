@@ -135,7 +135,14 @@
 - **The status line says what the wait is**: a clock while the agent thinks,
   a note when it has gone quiet for long, and how many batches are ready.
 - **A tidier idle panel.** The play button and the agent it runs sit on one
-  row, with Voice at its right as a clear on/off icon toggle.
+  row, with Voice and Key sounds at its right as clear on/off icon toggles.
+- **Key sounds you can choose by ear.** The arrow beside the keyboard
+  toggle opens a list of six keyboards (new: Alpaca and the IBM Model M's
+  buckling spring). Each one types a few words as you move to it. The sounds themselves are more lifelike too: Shift goes
+  down for capitals, each key keeps its own pitch, a word's first key lands
+  harder, indentation is silent, and a small room's echo puts the keyboard on
+  a desk instead of in your ear. New command: **AI Pair: Select Typing Sound
+  Switch**.
 - **Start your agent from the panel.** The play button runs the agent you
   picked in a free terminal already standing in your project, or a new
   one there — OMP, Claude Code, Codex, OpenCode, Gemini CLI, or a command of your own with
@@ -166,6 +173,14 @@
   Chatterbox speaks in its own voice, or in one taken from a recording
   you pick. New settings: `aiPair.voice.model`,
   `aiPair.voice.chatterboxVoice`.
+- **Hear the agent type.** The keyboard button in the Pair panel turns on
+  typing sounds: its keystrokes play as a real mechanical keyboard, from
+  recordings of a switch — a press and a release per key, letters by their
+  row, space, enter and backspace their own, each a little different. Kept
+  well under the voice, and quieter still while it talks. Click the panel
+  once so VS Code lets it make sound. New settings:
+  `aiPair.typingSounds.enabled`, `.volume`, `.switch` (Holy Panda, Cream,
+  MX Brown, Topre; recordings from kbsim, MIT).
 
 ## 0.1.0
 

@@ -7,6 +7,7 @@ export type {
   EditOptions,
   EditorPort,
   Focus,
+  KeysPort,
   PanelEvent,
   PanelPort,
   Ref,

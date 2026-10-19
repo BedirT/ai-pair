@@ -9,6 +9,16 @@ import { NarrationPanel } from "./panel"
 import { AgentStarter, registerServerProvider, setUpAgent, writeLauncher } from "./setup"
 import { VoiceEngine, type VoiceModel } from "./voice"
 
+/** The switches whose recordings ship in media/keys, one folder each, as the picker names them. */
+const SWITCHES: Record<string, { label: string; detail: string }> = {
+  holypanda: { label: "Holy Panda", detail: "Tactile: a deep, rounded thock" },
+  cream: { label: "NovelKeys Cream", detail: "Linear: smooth and creamy" },
+  alpaca: { label: "Alpaca", detail: "Linear: soft and quiet, a light clack" },
+  mxbrown: { label: "Cherry MX Brown", detail: "Tactile: the classic office board" },
+  topre: { label: "Topre", detail: "Rubber dome: muted and cushioned" },
+  buckling: { label: "Buckling Spring", detail: "IBM Model M: loud, crisp, old-school" },
+}
+
 /** The pairing modes the panel offers: build it, or learn it at three splits of the work. */
 type ModeId = "build" | "learn-show" | "learn-together" | "learn-try"
 const MODES: Record<ModeId, { label: string; description: string; drive?: "show" | "together" | "try" }> = {
@@ -95,6 +105,37 @@ export function activate(context: vscode.ExtensionContext): Api {
   panel.voice = voice
   controller.setVoice(voice)
   if (config().get("voice.enabled", false)) voice.setEnabled(true)
+  const typingSounds = () => {
+    const chosen = config().get("typingSounds.switch", "holypanda")
+    const key = chosen in SWITCHES ? chosen : "holypanda"
+    return {
+      enabled: config().get("typingSounds.enabled", false),
+      volume: Math.min(1, Math.max(0, config().get("typingSounds.volume", 0.5))),
+      sounds: vscode.Uri.joinPath(context.extensionUri, "media", "keys", key),
+      name: SWITCHES[key]!.label,
+    }
+  }
+  // The panel's keyboard menu: the switches by name and feel, each heard as it's moved to.
+  panel.switches = {
+    choices: () => ({
+      current: config().get("typingSounds.switch", "holypanda"),
+      items: Object.entries(SWITCHES).map(([id, s]) => ({ id, name: s.label, tag: s.detail })),
+    }),
+    set: (id) => {
+      if (!(id in SWITCHES)) return
+      void (async () => {
+        const global = vscode.ConfigurationTarget.Global
+        await config().update("typingSounds.switch", id, global)
+        // Choosing a switch is asking to hear it.
+        if (!config().get("typingSounds.enabled", false)) await config().update("typingSounds.enabled", true, global)
+      })()
+    },
+    preview: (id) => {
+      if (id in SWITCHES) panel.previewTypingSound(vscode.Uri.joinPath(context.extensionUri, "media", "keys", id))
+    },
+  }
+  panel.showTypingSounds(typingSounds())
+  controller.setKeys(panel)
   registerServerProvider(context)
 
   context.subscriptions.push(
@@ -109,6 +150,10 @@ export function activate(context: vscode.ExtensionContext): Api {
     vscode.commands.registerCommand("aiPair.pickMode", () => panel.openMenu("mode")),
     vscode.commands.registerCommand("aiPair.toggleVoice", () => voice.toggle()),
     vscode.commands.registerCommand("aiPair.selectVoice", () => panel.openMenu("voice")),
+    vscode.commands.registerCommand("aiPair.toggleTypingSounds", () =>
+      config().update("typingSounds.enabled", !typingSounds().enabled, vscode.ConfigurationTarget.Global),
+    ),
+    vscode.commands.registerCommand("aiPair.selectTypingSound", () => panel.openMenu("keys")),
     voice,
     editor,
     vscode.window.registerWebviewViewProvider(NarrationPanel.viewId, panel, {
@@ -128,6 +173,10 @@ export function activate(context: vscode.ExtensionContext): Api {
       if (e.affectsConfiguration("aiPair.voice.enabled")) voice.setEnabled(config().get("voice.enabled", false), true)
       if (e.affectsConfiguration("aiPair.voice.model")) voice.followModel(true)
       if (e.affectsConfiguration("aiPair.voice.voice") || e.affectsConfiguration("aiPair.voice.chatterboxVoice")) panel.showVoiceStatus(voice.status())
+      if (e.affectsConfiguration("aiPair.typingSounds")) {
+        panel.showTypingSounds(typingSounds())
+        panel.showSwitchChoices()
+      }
     }),
     vscode.commands.registerCommand("aiPair.playDemo", () => {
       if (!vscode.workspace.workspaceFolders?.length) {

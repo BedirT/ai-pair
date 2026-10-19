@@ -129,5 +129,13 @@ export interface VoicePort {
   stop(): void
 }
 
+/**
+ * Key sounds, when they are on: told of each keystroke of the agent's as it lands. `text` is what
+ * the keystroke put in (a newline comes with the indent after it), or `"\b"` for a deletion.
+ */
+export interface KeysPort {
+  press(text: string): void
+}
+
 /** A change to a document, in the coordinates of the text before it. */
 export type Change = { offset: number; deleteLength: number; text: string }

@@ -91,6 +91,7 @@ account. While you pair:
 | write a part yourself | **My turn**. The agent becomes the navigator and comments as you type. **Hand back** returns the turn, with your reply if you typed one |
 | change the pace            | the speed menu (**1.0×**), from 0.4× to 3.0×. The voice speeds up with it, up to 2×                                                          |
 | hear it, not read it       | turn **Voice** on in the panel. It talks while it types, so your eyes stay on the code; the words still land in the history                  |
+| hear it type               | turn **Key sounds** on. Its keystrokes sound like a mechanical keyboard, kept well under the voice; the arrow beside it picks the keyboard   |
 | finish | **End**, or tell the agent you're done. You can pair again anytime |
 
 The cursor's color tells you what the agent is doing. It's yellow and pulsing
@@ -121,6 +122,18 @@ until you hear it. The arrow beside **Voice** chooses the model and whose voice 
   only use a voice you have the right to.
 
 Turning the voice off brings the big text back.
+
+**Hear it type.** The keyboard button in the Pair panel turns on **typing
+sounds**: each of the agent's keystrokes plays a recording of a real switch,
+a press and then a release, the way keyboard sound apps do it. Letters sound
+by the row their key sits in, space, enter and backspace have their own
+sounds, and every stroke is placed left or right and varied a little, so it
+never drones. It stays well under the voice and steps back further while the
+voice talks. VS Code lets the panel make sound only after a click in it: until
+then the keyboard button turns yellow, and clicking it lets the sound start.
+`aiPair.typingSounds.switch` picks the switch (Holy Panda by default, or
+Cream, MX Brown, Topre). The recordings are from
+[kbsim](https://github.com/tplai/kbsim), MIT.
 
 **Try it without an agent:** *AI Pair: Play Demo Session* plays a scripted
 session that adds a small API to an Express app, which it creates in
@@ -209,6 +222,9 @@ code --install-extension ai-pair-*.vsix
 | `aiPair.voice.chatterboxVoice` | A recording for Chatterbox to sound like. Empty uses its own voice. |
 | `aiPair.voice.rate` | How fast the voice talks on top of the playback speed (1 is its own pace). |
 | `aiPair.voice.runtimePath` | A bun or node program to run the voice with, if the usual places have none. |
+| `aiPair.typingSounds.enabled` | Play the agent's keystrokes as a mechanical keyboard. Off by default; the panel's keyboard button flips it. |
+| `aiPair.typingSounds.volume` | How loud, from 0 to 1 (0.5 by default). Always under the voice. |
+| `aiPair.typingSounds.switch` | Which switch's recordings: `holypanda`, `cream`, `alpaca`, `mxbrown`, `topre` or `buckling`. Or pick one by ear with the arrow by **Key sounds**. |
 
 ## Troubleshooting
 

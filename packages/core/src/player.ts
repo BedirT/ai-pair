@@ -7,7 +7,7 @@ import { actionKinds, CURSOR_MARKER, moveProblem, spanProblem, typeProblem } fro
 import { resolveSpan, resolveSpot, spanCandidates, spotCandidates, type Resolution } from "./places"
 import type { Config } from "./controller"
 import type { LineIds, Sighting } from "./lines"
-import type { Change, EditorPort, Focus, PanelPort, VoicePort } from "./ports"
+import type { Change, EditorPort, Focus, KeysPort, PanelPort, VoicePort } from "./ports"
 import { fileLines, isLineStart, lineEnd, lineText, position } from "./text"
 import type { Pacing } from "./timeline"
 import type { Timing } from "./timing"
@@ -55,6 +55,8 @@ export type Stage = {
   confirm(id: number, command: string): Promise<boolean>
   /** The voice to speak a `say` with, when one is on and ready. Rehearsals have none: they are silent. */
   voice?(): VoicePort | undefined
+  /** The key sounds to tell of each keystroke, when they are on. Rehearsals have none: they are silent. */
+  keys?(): KeysPort | undefined
   /** The identities of the lines of the files played in. */
   lines: LineIds
   /**
@@ -519,6 +521,7 @@ export class Player {
       s.selection = null
       this.touch(playing, file, start, end - start, 0)
       await this.edit(file, { offset: start, deleteLength: end - start, text: "" }, { undoStopBefore: true, undoStopAfter: true })
+      this.stage.keys?.()?.press("\b")
       this.follow()
       await this.delay(timing.afterDeleteMs)
       return ok
@@ -671,6 +674,8 @@ export class Player {
         undoStopBefore: i === 0,
         undoStopAfter: i === chunks.length - 1,
       })
+      // An empty chunk only clears the selection: a deletion.
+      this.stage.keys?.()?.press(chunk.text || "\b")
       typed += chunk.text
       this.follow()
     }

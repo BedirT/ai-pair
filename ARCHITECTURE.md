@@ -301,6 +301,27 @@ sentences when speech falls behind.
 Words are spoken for every agent alike: the sound
 hangs off playback, not off the harness.
 
+## Typing sounds
+
+The player tells its stage's [`KeysPort`](packages/core/src/ports.ts) of
+each keystroke as it lands: the chunk it typed (a newline comes with its
+indent), or `"\b"` for a deletion. Rehearsals have none, like the voice.
+The panel is that port: when the sounds are on it posts each keystroke to
+its page, which plays it with Web Audio from one switch's recordings
+(`media/keys/<switch>`, from [kbsim](https://github.com/tplai/kbsim), MIT):
+a press by the key's row or kind (Shift's row first for a shifted key), then
+a release 50–110 ms later, panned to the key, pitched by a fixed per-key
+offset, and struck harder and brighter (a high shelf) after a pause. A
+whitespace-only chunk, an indent, is silent. Everything runs through one
+gain node into the speakers and, quietly, through a convolver with a short
+generated room echo. Switches are evened out by their presses' loudness on
+load and kept once loaded. **AI Pair: Select Typing Sound Switch** (the
+arrow by Key sounds) is a quick pick that posts `keysPreview` as each item
+becomes active; the page types a short line on that switch, cutting off any
+earlier try. The voice tells the panel when it is sounding (`showSpeaking`),
+and the page lowers the keys under it. A webview may only start sound after
+a click or key of its own, so until one the keys button asks for it.
+
 ## Distribution
 
 `pair-mcp` is **bundled inside the extension**, not published separately, so

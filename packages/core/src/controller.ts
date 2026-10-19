@@ -6,7 +6,7 @@ import { CURSOR_MARKER, ToolError } from "@ai-pair/protocol"
 import { fileDiff } from "./diff"
 import { LineIds, type Sighting } from "./lines"
 import { agentPath, displayPath, Player, programOf, sayPlans, type Scene } from "./player"
-import type { AgentState, Change, CursorView, EditorPort, PanelPort, Ref, SharedSelection, VoicePort } from "./ports"
+import type { AgentState, Change, CursorView, EditorPort, KeysPort, PanelPort, Ref, SharedSelection, VoicePort } from "./ports"
 import { followChange, rehearse, type Rehearsal } from "./rehearsal"
 import { fileLines } from "./text"
 import { Timeline } from "./timeline"
@@ -187,6 +187,7 @@ export class Controller {
   /** The mode the next session runs in; fixed for a session once it starts. */
   private mode: { kind: "build" | "learn"; drive?: "show" | "together" | "try" } = { kind: "build" }
   private voice: VoicePort | undefined
+  private keys: KeysPort | undefined
   private lastPosted = ""
 
   constructor(
@@ -227,6 +228,7 @@ export class Controller {
           render: () => this.render(),
           confirm: (id, command) => this.confirm(s, id, command),
           voice: () => (this.voice?.ready ? this.voice : undefined),
+          keys: () => this.keys,
           lines,
         }),
         queue: [],
@@ -508,6 +510,11 @@ export class Controller {
   setVoice(voice: VoicePort | undefined): void {
     if (this.voice !== voice) this.voice?.stop()
     this.voice = voice
+  }
+
+  /** The key sounds told of each keystroke of the agent's, or none. */
+  setKeys(keys: KeysPort | undefined): void {
+    this.keys = keys
   }
 
   setConfirmCommands(confirm: boolean): void {

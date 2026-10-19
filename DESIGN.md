@@ -122,11 +122,11 @@ session before it starts and remembered between them; the agent is
 told at the start, and the mode's page rides with its guide. The panel never
 hosts an agent: each stays its own app, with its own screen, model and
 thinking settings, and Start treats them all the same. At the right of
-the same row sits the voice toggle as an icon only, its name in its
-tip, showing on or off, joined to its own small menu opening here in
-the panel (the panel's menus all do: speed, mode, voice; each shifts
-back inside when the panel is too narrow for where it hangs). The voice
-menu lists Kokoro's and
+the same row sit the sound toggles as icons only, their names in their
+tips: Voice and Key sounds, each showing on or off, each joined to its
+own small menu opening here in the panel (the panel's menus all do:
+speed, mode, voice, keyboard; each shifts back inside when the panel
+is too narrow for where it hangs). The voice menu lists Kokoro's and
 Chatterbox's voices under friendly names with a colored dot each, a
 down-arrow on one whose engine is still to fetch, and the programmer's
 own recording among them, with choosing one a row of its own. Each
@@ -173,6 +173,22 @@ explains — a long one gets a head start, then talks over the typing, so the
 two finish about together; a natural voice keeps one steady pace while it
 does this, spread by pauses alone, never played faster or slower line by
 line. Interrupting cuts the voice off mid-line.
+
+**Typing sounds.** A pair at one desk hears the other's keyboard, and it
+tells you work is happening without looking. The keyboard button in the
+band's controls (and **Key sounds** before a session) plays each of the
+agent's keystrokes from recordings of a real switch: a press, then a
+release a moment later; letters by their key's row, space, enter and
+backspace their own; Shift first for a capital or symbol. Each key keeps its
+own slight pitch, as one board's keys do, and is panned to where it sits; a
+word's first stroke lands harder and brighter than the ones inside it, and
+indentation, which lands all at once, is silent. A short room echo puts the
+keyboard on a desk rather than in the ear. The arrow beside **Key sounds**
+chooses among six switches, each typing a few words as the list reaches it,
+so the choice is by ear. It is ambience, never in the way of the words:
+well under the voice at any volume, and stepping back further while the
+voice talks. The panel may only make sound after a click in it, so until
+then the button shows yellow and asks for one.
 
 Behavior:
 

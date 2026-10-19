@@ -94,6 +94,10 @@ the start, so you only say what the task is.
   voice** offers Kokoro (light, works everywhere) or Chatterbox (more
   natural; needs uv, and an Apple Silicon GPU or an NVIDIA card to keep
   up; a big one-time fetch).
+- **Key sounds:** the keyboard button plays the agent's keystrokes as a
+  real mechanical keyboard, softly, under the voice. The arrow beside it
+  picks one of six keyboards, each playing as you move to it. Click the
+  panel once so VS Code lets it make sound.
 
 **AI Pair: Play Demo Session** shows what it's like without an agent.
 
@@ -107,3 +111,5 @@ the start, so you only say what the task is.
 - `aiPair.workAheadBatches`: how many batches the agent may write ahead of
   what you're watching (default 2).
 - `aiPair.voice.*`: the voice — on or off, whose it is, and how fast it talks.
+- `aiPair.typingSounds.*`: typing sounds — on or off, how loud, and which
+  switch.

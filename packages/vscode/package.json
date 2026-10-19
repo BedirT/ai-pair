@@ -89,6 +89,16 @@
         "category": "AI Pair"
       },
       {
+        "command": "aiPair.toggleTypingSounds",
+        "title": "Toggle Typing Sounds",
+        "category": "AI Pair"
+      },
+      {
+        "command": "aiPair.selectTypingSound",
+        "title": "Select Typing Sound Switch",
+        "category": "AI Pair"
+      },
+      {
         "command": "aiPair.playDemo",
         "title": "Play Demo Session",
         "category": "AI Pair"
@@ -212,6 +222,35 @@
           "default": "",
           "scope": "machine",
           "description": "Path to a bun or node program to run the voice process with (VS Code's own runtime cannot load the speech engine). Empty finds bun, then node, in the usual places."
+        },
+        "aiPair.typingSounds.enabled": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "markdownDescription": "Hear the agent's keystrokes as a mechanical keyboard while it types: recordings of a real switch (`aiPair.typingSounds.switch`), a press and a release per key. Kept well under the voice, and quieter still while the voice talks. The Pair panel plays them, so it needs to have been opened, and clicked once, before they sound."
+        },
+        "aiPair.typingSounds.volume": {
+          "type": "number",
+          "default": 0.5,
+          "minimum": 0,
+          "maximum": 1,
+          "scope": "application",
+          "description": "How loud the typing sounds are, from 0 (silent) to 1. Even 1 stays under the voice."
+        },
+        "aiPair.typingSounds.switch": {
+          "type": "string",
+          "default": "holypanda",
+          "enum": ["holypanda", "cream", "alpaca", "mxbrown", "topre", "buckling"],
+          "enumDescriptions": [
+            "Holy Panda: tactile, a deep and rounded thock.",
+            "NovelKeys Cream: linear, smooth and creamy.",
+            "Alpaca: linear, soft and quiet, a light clack.",
+            "Cherry MX Brown: the classic tactile office board.",
+            "Topre: soft, muted, cushioned.",
+            "Buckling Spring: the IBM Model M, loud and crisp."
+          ],
+          "scope": "application",
+          "description": "Which switch the typing sounds are recorded from. The arrow by Key sounds in the Pair panel plays each one so you can choose by ear."
         }
       }
     },

@@ -475,17 +475,21 @@ export class VoiceEngine implements VoicePort, VoicePanelPort {
     return this.run(command.cmd, command.args, true)
   }
 
-  /** Runs a program to its end; as a player, it can be cut off with `stop`. */
+  /** Runs a program to its end; as a player, it can be cut off with `stop`, and the panel knows it's sounding. */
   private run(cmd: string, args: string[], asPlayer: boolean): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] })
-      if (asPlayer) this.player = child
+      if (asPlayer) {
+        this.player = child
+        this.panel.showSpeaking(true)
+      }
       let err = ""
       child.stderr?.on("data", (data: Buffer) => (err += data.toString()))
       child.stdout?.on("data", (data: Buffer) => this.output.append(data.toString()))
       const finished = () => {
         if (this.player !== child) return
         this.player = undefined
+        this.panel.showSpeaking(false)
       }
       child.on("error", (error) => {
         finished()

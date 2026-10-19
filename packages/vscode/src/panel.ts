@@ -1,7 +1,7 @@
 // The narration panel: a webview view in the secondary side bar. See "Narration panel" in DESIGN.md.
 
 import * as vscode from "vscode"
-import type { Controller, PanelEvent, PanelPort, Ref, SharedSelection } from "@ai-pair/core"
+import type { Controller, KeysPort, PanelEvent, PanelPort, Ref, SharedSelection } from "@ai-pair/core"
 import { panelHtml } from "./panelHtml"
 
 /** What the panel asks of its Start button: run the chosen agent in a terminal. Which agent is
@@ -40,6 +40,16 @@ export type VoicePanelPort = {
   chooseRecording(): void
 }
 
+/** The typing sounds' settings, as the panel plays them. `sounds`: the folder of the switch's recordings; `name`: the switch's. */
+export type TypingSounds = { enabled: boolean; volume: number; sounds: vscode.Uri; name: string }
+
+/** What the panel asks of the keyboard switches: the list for its menu, a pick, a preview by ear. */
+export type SwitchPort = {
+  choices(): { current: string; items: Array<{ id: string; name: string; tag: string }> }
+  set(id: string): void
+  preview(id: string): void
+}
+
 /** Messages from the webview. */
 type FromPanel =
   | { type: "ready" }
@@ -63,23 +73,28 @@ type FromPanel =
   | { type: "voiceToggle" }
   | { type: "voiceSet"; model: string; voice: string }
   | { type: "voiceRecording" }
+  | { type: "typingSoundsToggle" }
+  | { type: "typingSoundSet"; id: string }
+  | { type: "typingSoundPreview"; id: string }
 
 const MAX_LOG = 400
 
 /** The commands the panel may run: the ones its intro links to. */
 const PANEL_COMMANDS: ReadonlySet<string> = new Set(["aiPair.playDemo", "aiPair.setUpAgent"])
 
-export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
+export class NarrationPanel implements PanelPort, KeysPort, vscode.WebviewViewProvider {
   static readonly viewId = "aiPair.narration"
   controller?: Controller
   starter?: StarterPort
   mode?: ModePort
   voice?: VoicePanelPort
+  switches?: SwitchPort
   private view?: vscode.WebviewView
   /** Everything posted so far, replayed when the view is (re)created. */
   private readonly log: PanelEvent[] = []
   private modeChoice: ModeChoice = { id: "build", label: "Build" }
   private voiceStatus: VoiceStatus = { enabled: false, state: "off", voice: "af_heart" }
+  private typingSounds?: TypingSounds
 
   constructor(
     private readonly resolvePath: (file: string) => string,
@@ -121,12 +136,43 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
     void webview.postMessage({ type: "voiceChoices", ...choices, kokoro: shown(choices.kokoro), chatterbox: shown(choices.chatterbox) })
   }
 
+  /** The keyboard menu's rows, as they now stand. Not logged: only now matters. */
+  showSwitchChoices(): void {
+    if (this.switches) void this.view?.webview.postMessage({ type: "switchChoices", ...this.switches.choices() })
+  }
+
   /** Opens one of the panel's own menus (from a command). The page ignores it mid-session,
    *  when the row these live on is put away. */
-  openMenu(menu: "mode" | "voice"): void {
+  openMenu(menu: "mode" | "voice" | "keys"): void {
     this.reveal()
     void this.view?.webview.postMessage({ type: "openMenu", menu })
   }
+
+  /** The voice started or stopped sounding: the typing sounds step back while it does. Not logged. */
+  showSpeaking(speaking: boolean): void {
+    void this.view?.webview.postMessage({ type: "speaking", speaking })
+  }
+
+  /** The typing sounds were turned on or off, louder or softer, or another switch. Not logged: only now matters. */
+  showTypingSounds(sounds: TypingSounds): void {
+    this.typingSounds = sounds
+    const webview = this.view?.webview
+    if (!webview) return
+    const { enabled, volume, name } = sounds
+    void webview.postMessage({ type: "typingSounds", enabled, volume, name, sounds: webview.asWebviewUri(sounds.sounds).toString() })
+  }
+
+  /** Plays a few words typed on the switch recorded in `sounds`, on or off, so it can be chosen by ear. */
+  previewTypingSound(sounds: vscode.Uri): void {
+    const webview = this.view?.webview
+    if (webview) void webview.postMessage({ type: "keysPreview", sounds: webview.asWebviewUri(sounds).toString() })
+  }
+
+  /** A keystroke of the agent's landed: the page plays it, when typing sounds are on. Not logged. */
+  press(text: string): void {
+    if (this.typingSounds?.enabled) void this.view?.webview.postMessage({ type: "key", text })
+  }
+
 
   post(event: PanelEvent): void {
     this.log.push(event)
@@ -169,6 +215,8 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
         this.showSelection(this.selection.ref())
         this.showMode(this.mode?.choice() ?? this.modeChoice)
         this.showVoiceStatus(this.voice?.status() ?? this.voiceStatus)
+        if (this.typingSounds) this.showTypingSounds(this.typingSounds)
+        this.showSwitchChoices()
         return
       case "speed":
         this.speed.set(m.value)
@@ -194,6 +242,15 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
         return
       case "voiceRecording":
         this.voice?.chooseRecording()
+        return
+      case "typingSoundsToggle":
+        void vscode.commands.executeCommand("aiPair.toggleTypingSounds")
+        return
+      case "typingSoundSet":
+        this.switches?.set(m.id)
+        return
+      case "typingSoundPreview":
+        this.switches?.preview(m.id)
         return
       case "draft":
         // Typing a reply pauses playback, the way a pair stops when you start talking.

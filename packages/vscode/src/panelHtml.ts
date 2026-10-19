@@ -21,6 +21,7 @@ const ICONS = {
   play: svg('<path d="M8 5l11 7-11 7z"/>'),
   speaker: svg('<path d="M11 5L6 9H3v6h3l5 4zM15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/>', "speaker-on"),
   speakerOff: svg('<path d="M11 5L6 9H3v6h3l5 4zM16 9l6 6M22 9l-6 6"/>', "speaker-off"),
+  keyboard: svg('<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6.5 10h1M10.5 10h1M14.5 10h1M18 10h-.5M8 14h8"/>'),
   chevron: svg('<path d="M7 10l5 5 5-5"/>', "chevron"),
   // The pairing modes: bricks going up, an eye watching, two people, a pencil in your own hand.
   build: svg('<rect x="3" y="13" width="8" height="7" rx="1"/><rect x="13" y="13" width="8" height="7" rx="1"/><rect x="8" y="4" width="8" height="7" rx="1"/>'),
@@ -146,7 +147,7 @@ export function panelHtml(cspSource: string): string {
   #end { margin-left: 2px; }
   #speed-wrap { position: relative; }
   #speed { font-variant-numeric: tabular-nums; }
-  :is(#speed-menu, #mode-menu, #voice-menu) {
+  :is(#speed-menu, #mode-menu, #voice-menu, #keys-menu) {
     position: absolute; right: 0; top: 28px; z-index: 10; padding: 4px; border-radius: 6px;
     display: flex; flex-direction: column; background: var(--vscode-menu-background, var(--surface));
     color: var(--vscode-menu-foreground, var(--fg));
@@ -154,18 +155,18 @@ export function panelHtml(cspSource: string): string {
     box-shadow: 0 4px 14px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.18));
     max-width: calc(100vw - 20px);
   }
-  :is(#speed-menu, #mode-menu, #voice-menu)[hidden] { display: none; }
-  :is(#speed-menu, #mode-menu, #voice-menu) button { justify-content: flex-start; height: 24px; padding: 0 8px; color: inherit; text-align: left; }
+  :is(#speed-menu, #mode-menu, #voice-menu, #keys-menu)[hidden] { display: none; }
+  :is(#speed-menu, #mode-menu, #voice-menu, #keys-menu) button { justify-content: flex-start; height: 24px; padding: 0 8px; color: inherit; text-align: left; }
   #speed-menu button { font-variant-numeric: tabular-nums; }
-  :is(#speed-menu, #mode-menu, #voice-menu) button[aria-checked="true"] { background: var(--soft-hover); }
-  :is(#speed-menu, #mode-menu, #voice-menu) button:hover { background: var(--vscode-menu-selectionBackground, var(--soft)); color: var(--vscode-menu-selectionForeground, inherit); }
+  :is(#speed-menu, #mode-menu, #voice-menu, #keys-menu) button[aria-checked="true"] { background: var(--soft-hover); }
+  :is(#speed-menu, #mode-menu, #voice-menu, #keys-menu) button:hover { background: var(--vscode-menu-selectionBackground, var(--soft)); color: var(--vscode-menu-selectionForeground, inherit); }
   /* The pairing mode: one button showing the active mode's icon; its menu opens here, in the panel. */
   #mode-wrap { position: relative; }
   #mode-btn { box-shadow: inset 0 0 0 1px var(--hair); padding: 0 7px; }
   #mode-btn:hover, #mode-btn.on { background: var(--vscode-toolbar-hoverBackground, var(--soft)); }
   #mode-current { display: inline-flex; }
   #mode-menu { left: 0; right: auto; min-width: 232px; }
-  :is(#mode-menu, #voice-menu) button { height: auto; padding: 5px 8px; }
+  :is(#mode-menu, #voice-menu, #keys-menu) button { height: auto; padding: 5px 8px; }
   .mode-text { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; }
   .mode-desc { font-size: 11px; color: color-mix(in srgb, currentColor 62%, transparent); }
   /* Menu sections and rows: a colored dot where an icon would only repeat itself, a down-arrow
@@ -175,6 +176,7 @@ export function panelHtml(cspSource: string): string {
   .hue { width: 8px; height: 8px; border-radius: 50%; flex: none; margin: 0 3px; }
   .dl { margin-left: auto; display: inline-flex; opacity: 0.75; padding-left: 10px; }
   #voice-menu { min-width: 232px; max-height: 48vh; overflow-y: auto; }
+  #keys-menu { min-width: 232px; }
 
   #now { display: none; margin-top: 8px; }
   body.active #now { display: block; }
@@ -223,16 +225,17 @@ export function panelHtml(cspSource: string): string {
   button.toggle { height: 24px; padding: 0 8px; color: var(--muted); }
   button.toggle:hover:not(:disabled) { color: var(--fg); background: var(--vscode-toolbar-hoverBackground, var(--soft)); }
   button.toggle[aria-pressed="true"] { color: var(--fg); background: var(--vscode-toolbar-hoverBackground, var(--soft)); }
-  #voice-pick { padding: 0 4px; }
+  :is(#voice-pick, #keys-pick) { padding: 0 4px; }
   /* Words show only when something needs saying, on a line of their own under the toggles. */
   #voice-status { flex-basis: 100%; }
   #voice-status:empty { display: none; }
-  /* Too narrow for one line: play stays left, the mode takes the right, and the voice drops to
-     its own line, instead of huddling at the right edge. */
+  /* Too narrow for one line: play stays left, the mode takes the right, and sound drops to its
+     own line with voice left and keys right, instead of huddling at the right edge. */
   @media (max-width: 319px) {
     #mode-wrap { margin-left: auto; }
     #sound { flex-basis: 100%; margin-left: 0; justify-content: space-between; }
   }
+  body.keys-blocked #keys-toggle { color: var(--read); }
   /* With the voice speaking, the band's big words go: the eyes belong on the code. A command
      stays: allowing it is a button to press, and nothing plays until it's pressed. */
   body.voice :is(#now-text, #now-ref) { display: none; }
@@ -242,6 +245,8 @@ export function panelHtml(cspSource: string): string {
   body.voice-enabled :is(#voice, #voice-toggle) .speaker-on { display: block; }
   body.voice-enabled :is(#voice, #voice-toggle) .speaker-off { display: none; }
   body.voice-enabled #voice { color: var(--fg); background: var(--vscode-toolbar-hoverBackground, var(--soft)); }
+  body.typing-sounds #keys { color: var(--fg); background: var(--vscode-toolbar-hoverBackground, var(--soft)); }
+  body.keys-blocked #keys { color: var(--read); }
   .entry.tool { font-family: var(--mono); font-size: 11.5px; color: var(--faint); }
 
   #composer { display: none; margin-top: 12px; }
@@ -321,6 +326,7 @@ export function panelHtml(cspSource: string): string {
         <div id="status"><span id="dot" class="dot off"></span><span id="status-text">No session</span><span id="mode-label"><span id="mode-icon"></span><span id="mode-word"></span></span></div>
         <div id="controls">
           <button id="voice" class="quiet" aria-label="Voice" data-tip="Hear the agent instead of reading it">${ICONS.speaker}${ICONS.speakerOff}</button>
+          <button id="keys" class="quiet" aria-label="Typing sounds" aria-pressed="false" data-tip="Hear the agent's keystrokes">${ICONS.keyboard}</button>
           <button id="pause" class="quiet" aria-label="Pause" data-tip="Pause (Space)" aria-keyshortcuts="Space">${ICONS.pause}${ICONS.resume}</button>
           <button id="interrupt" class="quiet" aria-label="Interrupt" data-tip="Interrupt">${ICONS.stop}</button>
           <button id="turn" class="quiet" aria-label="My turn" data-tip="Take the turn: you drive, the agent navigates">${ICONS.swap}<span id="turn-label">My turn</span></button>
@@ -365,7 +371,12 @@ export function panelHtml(cspSource: string): string {
               <button id="voice-toggle" class="toggle" aria-label="Voice" aria-pressed="false">${ICONS.speaker}${ICONS.speakerOff}</button>
               <button id="voice-pick" class="toggle" aria-label="Choose a voice" aria-haspopup="menu" aria-expanded="false" data-tip="Choose whose voice it is">${ICONS.chevron}</button>
             </div>
+            <div class="seg">
+              <button id="keys-toggle" class="toggle" aria-label="Key sounds" aria-pressed="false">${ICONS.keyboard}</button>
+              <button id="keys-pick" class="toggle" aria-label="Choose a keyboard switch" aria-haspopup="menu" aria-expanded="false" data-tip="Choose the keyboard: each one plays as you move to it">${ICONS.chevron}</button>
+            </div>
             <div id="voice-menu" role="menu" aria-label="Choose a voice" hidden></div>
+            <div id="keys-menu" role="menu" aria-label="Choose a keyboard switch" hidden></div>
           </div>
           <span id="voice-status"></span>
         </div>
@@ -394,6 +405,8 @@ export function panelHtml(cspSource: string): string {
     agentStart: $("agent-start"),
     modeBtn: $("mode-btn"), modeMenu: $("mode-menu"), modeCurrent: $("mode-current"), modeIcon: $("mode-icon"), modeWord: $("mode-word"),
     voice: $("voice"), voiceToggle: $("voice-toggle"), voicePick: $("voice-pick"), voiceMenu: $("voice-menu"), voiceStatus: $("voice-status"),
+    keysMenu: $("keys-menu"),
+    keys: $("keys"), keysToggle: $("keys-toggle"), keysPick: $("keys-pick"),
     reply: $("reply"), send: $("send"), attach: $("attach"), attachRef: $("attach-ref"), attachX: $("attach-x"),
     run: $("run"), runLabel: $("run-label"), runCmd: $("run-cmd"), runGo: $("run-go"), runProgram: $("run-program"), runAll: $("run-all"), runSkip: $("run-skip"),
     history: $("history"), tip: $("tip"),
@@ -533,13 +546,225 @@ export function panelHtml(cspSource: string): string {
     syncTip();
   }
 
-  // The panel's own sound, for the voice menu's samples: made on first use, since a webview may
-  // only start sound after a click or key of its own.
-  let audio = null;
-  function panelAudio() {
-    audio ??= new AudioContext();
+  // Typing sounds: a mechanical keyboard under the agent's typing, played from recordings of a real
+  // switch (see media/keys), the way keyboard sound apps do it. Each keystroke is a press and, a
+  // moment later, a release. A letter sounds like the row its key sits in, and space, enter and
+  // backspace have their own sounds; a capital or a symbol is typed with Shift held, as hands do.
+  // Each key has a pitch of its own, the same every time, as the keys of one board differ, and is
+  // placed left or right where it sits. A word's first stroke lands harder than those rattled off
+  // inside it, and harder strokes ring brighter. A short room around it all puts the keyboard on a
+  // desk instead of in the ear. Quiet by design, and quieter still while the voice talks.
+  const KEYS_RMS = 0.045;   // how loud a switch's presses are, on average, at full volume
+  const KEYS_DUCK = 0.5;    // its share of that while the voice is talking
+  const KEYS_ROOM = 0.14;   // how much of the room is heard, next to the keys themselves
+  // The keys of a US layout, row by row from the numbers down, unshifted and shifted.
+  const KEY_ROWS = [
+    ["\`1234567890-=", "~!@#$%^&*()_+"],
+    ["qwertyuiop[]\\\\", "QWERTYUIOP{}|"],
+    ["asdfghjkl;'", "ASDFGHJKL:\\""],
+    ["zxcvbnm,./", "ZXCVBNM<>?"],
+  ];
+  // GENERIC_R4 is the bottom row, where Shift sits.
+  const KEY_FILES = {
+    press: ["GENERIC_R0", "GENERIC_R1", "GENERIC_R2", "GENERIC_R3", "GENERIC_R4", "SPACE", "ENTER", "BACKSPACE"],
+    release: ["GENERIC", "SPACE", "ENTER", "BACKSPACE"],
+  };
+  /** What a switch types when it's tried out in the picker. */
+  const PREVIEW = "const name = \\"Ada\\";\\n";
+  let typingSounds = { enabled: false, volume: 0.5, sounds: "", name: "" }, speaking = false;
+  let audio = null, keysOut = null, samples = null, samplesFrom = "", lastKey = -1, lastShifted = false, previewRun = 0;
+  const banks = {};   // each switch's recordings, by folder: loaded once, so trying them out is instant
+
+  function keysAudio() {
+    if (!audio) {
+      audio = new AudioContext();
+      audio.onstatechange = syncKeys;
+      keysOut = audio.createGain();
+      keysOut.gain.value = keysLevel();
+      keysOut.connect(audio.destination);
+      const room = audio.createConvolver();
+      room.buffer = roomEcho();
+      const wet = audio.createGain();
+      wet.gain.value = KEYS_ROOM;
+      keysOut.connect(room).connect(wet).connect(audio.destination);
+    }
     if (audio.state === "suspended") audio.resume().catch(() => {});
     return audio;
+  }
+
+  // A small room's echo: a few early reflections off the desk and walls, then a soft tail gone in a
+  // quarter second, darker as it fades, a little different in each ear. Scaled to unit energy, so
+  // KEYS_ROOM alone sets how much of it is heard.
+  function roomEcho() {
+    const rate = audio.sampleRate, length = Math.round(rate * 0.25);
+    const echo = audio.createBuffer(2, length, rate);
+    for (let ch = 0; ch < 2; ch++) {
+      const data = echo.getChannelData(ch);
+      let dark = 0;
+      for (let i = 0; i < length; i++) {
+        const t = i / rate, keep = Math.min(0.9, t * 8);
+        dark = dark * keep + (Math.random() * 2 - 1) * (1 - keep);
+        data[i] = dark * Math.exp(-t / 0.05);
+      }
+      for (const ms of [6, 11, 17]) data[Math.round(rate * (ms + ch * 1.5) / 1000)] += 0.3;
+      let energy = 0;
+      for (const x of data) energy += x * x;
+      const scale = 1 / Math.sqrt(energy);
+      for (let i = 0; i < length; i++) data[i] *= scale;
+    }
+    return echo;
+  }
+
+  // A switch's recordings, from the folder the extension names. Switches are recorded louder or
+  // softer: each is evened out by its presses' loudness, so every switch sits at the same level.
+  function loadBank(from) {
+    banks[from] ??= (async () => {
+      const bank = { press: {}, release: {}, gain: 1 };
+      await Promise.all(Object.entries(KEY_FILES).flatMap(([stroke, names]) => names.map(async (name) => {
+        const response = await fetch(from + "/" + stroke + "/" + name + ".mp3");
+        bank[stroke][name] = await audio.decodeAudioData(await response.arrayBuffer());
+      })));
+      let energy = 0, length = 0;
+      for (const buffer of Object.values(bank.press)) {
+        for (const x of buffer.getChannelData(0)) energy += x * x;
+        length += buffer.length;
+      }
+      bank.gain = KEYS_RMS / Math.sqrt(energy / length);
+      return bank;
+    })().catch((error) => {
+      console.error("AI Pair couldn't load the typing sounds:", error);
+      delete banks[from];
+      return null;
+    });
+    return banks[from];
+  }
+
+  // Keystrokes before the switch's recordings are in make no sound.
+  async function useBank(from) {
+    samplesFrom = from;
+    samples = null;
+    const bank = await loadBank(from);
+    if (samplesFrom === from) samples = bank;
+  }
+
+  // Volume squared, the way ears hear it.
+  const keysLevel = () => typingSounds.volume * typingSounds.volume * (speaking ? KEYS_DUCK : 1);
+
+  // Steps back quickly when the voice starts and returns slowly, so gaps between sentences don't pump.
+  function syncKeysLevel() {
+    if (keysOut) keysOut.gain.setTargetAtTime(keysLevel(), audio.currentTime, speaking ? 0.04 : 0.5);
+  }
+
+  function setTypingSounds(e) {
+    typingSounds = { enabled: e.enabled, volume: e.volume, sounds: e.sounds, name: e.name || "" };
+    if (e.enabled) {
+      keysAudio();
+      if (e.sounds !== samplesFrom) void useBank(e.sounds);
+    } else if (audio) audio.suspend().catch(() => {});
+    syncKeysLevel();
+    syncKeys();
+  }
+
+  // A webview may only make sound once it has had a click or key of its own; until then the keys
+  // button's tip asks for one, and clicking it lets the sound start rather than turning it off.
+  function syncKeys() {
+    const on = typingSounds.enabled, blocked = on && audio?.state !== "running";
+    document.body.classList.toggle("typing-sounds", on);
+    document.body.classList.toggle("keys-blocked", blocked);
+    ui.keys.setAttribute("aria-pressed", String(on));
+    ui.keysToggle.setAttribute("aria-pressed", String(on));
+    const named = typingSounds.name ? " (" + typingSounds.name + ")" : "";
+    const tip = blocked ? "Click to let the key sounds play: the panel needs a click before it may make sound" : on ? "Key sounds on" + named + ": you hear the agent's keystrokes. Click to turn them off" : "Key sounds off: hear the agent's keystrokes, softly, under its voice";
+    setTip(ui.keys, tip);
+    setTip(ui.keysToggle, tip);
+    syncTip();
+  }
+
+  function pressKey(text) {
+    if (samples && typingSounds.enabled && audio?.state === "running") stroke(samples, text);
+  }
+
+  // A few words typed on a switch, on or off, so it can be chosen by ear. A newer try cuts this one short.
+  async function previewKeys(from) {
+    const run = ++previewRun;
+    keysAudio();
+    const bank = await loadBank(from);
+    for (const ch of PREVIEW) {
+      if (run !== previewRun || !bank) return;
+      if (audio.state === "running") stroke(bank, ch);
+      const { promise, resolve } = Promise.withResolvers();
+      setTimeout(resolve, 65 + Math.random() * 45 + (/[\\s=;(]/.test(ch) ? 110 : 0));
+      await promise;
+    }
+    if (run === previewRun && !typingSounds.enabled) audio.suspend().catch(() => {});
+  }
+
+  function stroke(bank, text) {
+    const key = keyOf(text);
+    const now = audio.currentTime, gap = now - lastKey;
+    // Indentation lands all at once, unheard; and faster than fingers, as a fast type at high
+    // speed can be, is one sound for the burst.
+    if (!key || gap < 0.025) return;
+    lastKey = now;
+    const vary = (spread) => 1 + (Math.random() * 2 - 1) * spread;
+    const force = (gap > 0.15 ? 1.1 : gap < 0.09 ? 0.92 : 1) * vary(0.08);
+    const gain = bank.gain * force, rate = key.tone * vary(0.01);
+    let at = now;
+    // Shift goes down first, unless it's still held from the capital just before.
+    if (key.shift && !(lastShifted && gap < 0.3)) {
+      strike(bank.press.GENERIC_R4, now, gain * 0.55, 0.97, -0.5, force);
+      at += 0.035;
+    }
+    lastShifted = !!key.shift;
+    strike(bank.press[key.press], at, gain, rate, key.pan, force);
+    // A finger holds a key down for a moment, never quite the same one.
+    strike(bank.release[key.release], at + 0.05 + Math.random() * 0.06, gain * 0.8, rate, key.pan, force);
+  }
+
+  // Each key's own pitch, the same every time it's struck: within 3% either way.
+  const toneOf = (ch) => 1 + ((((ch.charCodeAt(0) * 2654435761) >>> 0) % 61) - 30) / 1000;
+
+  // Which recordings a keystroke sounds like, where its key sits from -1 (left) to 1 (right), its
+  // pitch, and whether Shift is held for it. None for a run of whitespace: indentation.
+  function keyOf(text) {
+    if (text === "\\b") return { press: "BACKSPACE", release: "BACKSPACE", pan: 0.35, tone: 1 };
+    if (text[0] === "\\n" || text[0] === "\\r") return { press: "ENTER", release: "ENTER", pan: 0.4, tone: 1 };
+    if (text === " ") return { press: "SPACE", release: "SPACE", pan: 0, tone: 1 };
+    if (text === "\\t") return { press: "GENERIC_R1", release: "GENERIC", pan: -0.4, tone: 0.98 };
+    if (!text.trim()) return null;
+    const ch = text[0];
+    for (let row = 0; row < KEY_ROWS.length; row++) {
+      const [plain, shifted] = KEY_ROWS[row];
+      const shiftAt = shifted.indexOf(ch), at = shiftAt >= 0 ? shiftAt : plain.indexOf(ch);
+      if (at >= 0) return { press: "GENERIC_R" + row, release: "GENERIC", pan: (at / (plain.length - 1) - 0.5) * 0.6, tone: toneOf(plain[at]), shift: shiftAt >= 0 };
+    }
+    return { press: "GENERIC_R2", release: "GENERIC", pan: 0, tone: toneOf(ch) };
+  }
+
+  function strike(buffer, at, gain, rate, pan, force) {
+    if (!buffer) return;
+    const source = audio.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = rate;
+    // Harder strokes ring brighter: a couple of decibels up top either way.
+    const tone = audio.createBiquadFilter();
+    tone.type = "highshelf";
+    tone.frequency.value = 3500;
+    tone.gain.value = (force - 1) * 25;
+    const level = audio.createGain();
+    level.gain.value = gain;
+    const place = audio.createStereoPanner();
+    place.pan.value = pan;
+    source.connect(tone).connect(level).connect(place).connect(keysOut);
+    source.start(at);
+  }
+
+  // A click or key in the panel lets sound start, should it have been held back until one. The keys
+  // buttons decide for themselves, by whether sound was held back when they were clicked.
+  for (const type of ["pointerdown", "keydown"]) {
+    document.addEventListener(type, (e) => {
+      if (typingSounds.enabled && !e.target.closest?.("#keys, #keys-toggle")) keysAudio();
+    }, true);
   }
 
   // The reading pause fills a ring around the status dot.
@@ -745,7 +970,12 @@ export function panelHtml(cspSource: string): string {
       case "modeChoice": setModeChoice(e); return;
       case "voiceState": setVoice(e); return;
       case "voiceChoices": setVoiceChoices(e); return;
+      case "switchChoices": setSwitchChoices(e); return;
       case "openMenu": if (!document.body.classList.contains("active")) menuCtl[e.menu]?.open(); return;
+      case "typingSounds": setTypingSounds(e); return;
+      case "speaking": speaking = e.speaking; syncKeysLevel(); return;
+      case "key": pressKey(e.text); return;
+      case "keysPreview": void previewKeys(e.sounds); return;
 
       case "speed": {
         // One decimal, so the menu's speeds line up; a setting with more keeps them.
@@ -810,13 +1040,21 @@ export function panelHtml(cspSource: string): string {
   ui.agentStart.onclick = () => vscode.postMessage({ type: "agentStart" });
   ui.voice.onclick = () => vscode.postMessage({ type: "voiceToggle" });
   ui.voiceToggle.onclick = () => vscode.postMessage({ type: "voiceToggle" });
+  const toggleTypingSounds = () => {
+    // A click may start sound where nothing else can. While sound waits for one, this is that click.
+    if (typingSounds.enabled && audio?.state !== "running") { keysAudio(); return; }
+    if (!typingSounds.enabled) keysAudio();
+    vscode.postMessage({ type: "typingSoundsToggle" });
+  };
+  ui.keys.onclick = toggleTypingSounds;
+  ui.keysToggle.onclick = toggleTypingSounds;
 
   ui.runProgram.onclick = () => decide(true, "program");
   ui.runAll.onclick = () => decide(true, "all");
   ui.runSkip.onclick = () => decide(false);
   ui.end.onclick = () => vscode.postMessage({ type: "end" });
 
-  // Small menus that open here in the panel (speed, mode, voice): one button each, one
+  // Small menus that open here in the panel (speed, mode, voice, keyboard): one button each, one
   // open at a time, and each shifted back inside when it would run off the panel's edge.
   const menuSvg = (paths) => '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + "</svg>";
   const MENU_ICONS = {
@@ -867,7 +1105,7 @@ export function panelHtml(cspSource: string): string {
   });
 
   // Rows get a colored dot from their name, the same color every time: something to recognize a
-  // voice by where an icon would only repeat itself.
+  // voice or a keyboard by where an icon would only repeat itself.
   const HUES = ["#e8875b", "#e5c15c", "#8fc97a", "#5cc9b8", "#5ea8e0", "#9a86e0", "#e07ab0", "#c96f5e"];
   const hueFor = (id) => { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0; return HUES[h % HUES.length]; };
   function menuHead(text) {
@@ -909,6 +1147,9 @@ export function panelHtml(cspSource: string): string {
     parts.push(menuRow({ data: { action: "recording" }, icon: MENU_ICONS.mic, name: "Sound like a recording…", tag: "Your own voice: 10+ seconds of one person speaking clearly" }));
     ui.voiceMenu.replaceChildren(...parts);
   }
+  function setSwitchChoices(e) {
+    ui.keysMenu.replaceChildren(...e.items.map((s) => menuRow({ data: { id: s.id }, checked: e.current === s.id, hue: hueFor(s.id), name: s.name, tag: s.tag })));
+  }
 
   // Each voice is heard as the menu moves to it: its shipped sample starts at once, and
   // moving on (or away) cuts it short, so voices are compared back to back by ear.
@@ -922,7 +1163,7 @@ export function panelHtml(cspSource: string): string {
     stopVoice();
     if (!url) return;
     const run = voiceRun;
-    panelAudio();
+    keysAudio();
     let buffer = voiceBanks[url];
     if (!buffer) {
       try { buffer = await audio.decodeAudioData(await (await fetch(url)).arrayBuffer()); } catch { return; }
@@ -942,9 +1183,10 @@ export function panelHtml(cspSource: string): string {
     stopVoice();
     if (b.dataset.action === "recording") vscode.postMessage({ type: "voiceRecording" });
     else vscode.postMessage({ type: "voiceSet", model: b.dataset.model, voice: b.dataset.voice });
-  }, () => panelAudio());
+  }, () => keysAudio());
   const closeVoiceMenu = voiceCtl.close;
   voiceCtl.close = () => { stopVoice(); closeVoiceMenu(); };
+  const keysCtl = wireMenu(ui.keysPick, ui.keysMenu, (b) => vscode.postMessage({ type: "typingSoundSet", id: b.dataset.id }), () => keysAudio());
   let heardVoice = null;
   const hearVoiceRow = (e) => {
     const b = e.target.closest("button");
@@ -955,7 +1197,19 @@ export function panelHtml(cspSource: string): string {
   ui.voiceMenu.addEventListener("mouseover", hearVoiceRow);
   ui.voiceMenu.addEventListener("focusin", hearVoiceRow);
   ui.voiceMenu.addEventListener("mouseleave", () => { heardVoice = null; stopVoice(); });
-  const menuCtl = { mode: modeCtl, voice: voiceCtl };
+  // Each keyboard is heard as the menu moves to it, so it is chosen by ear.
+  let heardSwitch = "";
+  const hearSwitch = (e) => {
+    const b = e.target.closest("button");
+    if (!b || !b.dataset.id || b.dataset.id === heardSwitch) return;
+    heardSwitch = b.dataset.id;
+    vscode.postMessage({ type: "typingSoundPreview", id: heardSwitch });
+  };
+  ui.keysMenu.addEventListener("mouseover", hearSwitch);
+  ui.keysMenu.addEventListener("focusin", hearSwitch);
+  const menuCtl = { mode: modeCtl, voice: voiceCtl, keys: keysCtl };
+
+
 
   // Tooltips: an element's data-tip shows under it after a moment's hover, or at once while one is
   // showing or just was, the way VS Code's own hovers do; and on keyboard focus. A click hides it.

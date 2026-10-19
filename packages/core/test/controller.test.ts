@@ -290,6 +290,26 @@ describe("timing", () => {
     expect((await until(controller.step([]))).mode).toBeUndefined()
   })
 
+  it("tells the key sounds of each keystroke as it lands, and of a deletion; rehearsals stay silent", async () => {
+    const { editor, controller } = setup({ "a.ts": "  x\n" })
+    const pressed: Array<{ key: string; text: string }> = []
+    controller.setKeys({ press: (key) => pressed.push({ key, text: editor.text("a.ts") }) })
+    await controller.start()
+    await controller.read("a.ts")
+    await controller.step([{ do: [{ move: { file: "a.ts", line: 1, to: "line_end" } }, { type: "y\n  z▌" }] }])
+    await advance(1000)
+    // One press per keystroke, each after its text is in; a newline comes with its indent.
+    expect(pressed).toEqual([
+      { key: "y", text: "  xy\n" },
+      { key: "\n  ", text: "  xy\n  \n" },
+      { key: "z", text: "  xy\n  z\n" },
+    ])
+    pressed.length = 0
+    await controller.step([{ do: [{ select: { file: "a.ts", line: 2, text: "z" } }, { delete: true }] }])
+    await advance(1000)
+    expect(pressed).toEqual([{ key: "\b", text: "  xy\n  \n" }])
+  })
+
   it("pauses after a move, longer when the move is far", async () => {
     const lines = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join("\n")
     const { controller } = setup(
