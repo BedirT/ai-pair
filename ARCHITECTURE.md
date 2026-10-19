@@ -38,6 +38,14 @@ Status: **draft**.
   before its next edit, so it never reaches the core.
 - **The narration panel** is a webview. It talks to the extension via
   `postMessage`.
+- **Starting an agent** is as thin as it looks: the panel's Start button
+  types the chosen agent's command into a terminal — an open one only if
+  shell integration says it is free and already standing in the workspace,
+  else a new one there — after setting the pair server up in that agent
+  if it isn't. The
+  extension hosts no agent; each harness stays its own app and reaches the
+  editor through `pair-mcp`, so nothing about the protocol changes for any
+  of them.
 
 ### Why a relay
 
@@ -165,6 +173,13 @@ Claude Code: `/mcp__pair__start`). The agent calls `start`, which returns the
 **Later, from the editor.** Starting from the editor (type the task in the
 panel, and the extension launches the harness in the integrated terminal)
 would be a convenience on top, with a small adapter per harness. Not in v1.
+
+## How a beat plays
+
+A beat's words and its actions start together, and the next beat starts once
+both are done. The actions start after `timing.voice.leadMs` (or the reading
+time, if shorter), and the beat lasts as long as the longer of reading and
+working.
 
 ## Distribution
 
