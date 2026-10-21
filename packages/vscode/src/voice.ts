@@ -1,9 +1,6 @@
 // The agent's voice, on this machine, kept warm in its own small process and fed one sentence at a
-// time: the next is made while the last is still sounding. Two engines, both ours to fetch and run,
-// whichever agent is talking: Kokoro, a light local speech model (bun or node runs it, since
-// VS Code's runtime refuses its native code), and Chatterbox Turbo, more natural but heavier: on
-// an Apple Silicon Mac its GPU through mlx-audio, everywhere else the original PyTorch form, on an
-// NVIDIA card when there is one (uv runs both).
+// time: the next is made while the last is still sounding. Kokoro runs under bun or node;
+// Chatterbox and Phonon run under uv. Each model is fetched once, on a person's click.
 
 import { spawn, type ChildProcess } from "node:child_process"
 import * as fs from "node:fs"
@@ -19,7 +16,7 @@ import { SpeechQueue } from "./voiceQueue"
 const HOST: Host = { home: os.homedir(), env: process.env, platform: process.platform, exec: execProgram }
 
 /** Which speech model talks. */
-export type VoiceModel = "kokoro" | "chatterbox"
+export type VoiceModel = "kokoro" | "chatterbox" | "phonon"
 
 /** The Kokoro voices, with the names a person picks from: a name, and where it's from. */
 export const VOICES: Array<{ id: string; name: string; tag: string }> = [
@@ -63,6 +60,7 @@ const CHATTERBOX_MODEL = "mlx-community/chatterbox-turbo-4bit"
 const CHATTERBOX_TORCH = "chatterbox-tts==0.1.7"
 /** Chatterbox's watermarker still reads its files through pkg_resources, which newer setuptools dropped. */
 const CHATTERBOX_TORCH_WITH = "setuptools<81"
+const PHONON_PACKAGE = "ptts==0.4.0"
 
 /**
  * The session's speed carries over to the voice up to here: faster is hard to follow. Below 1 it
@@ -75,7 +73,7 @@ const TALK_RANGE = { min: 0.5, max: 2 }
 
 export type VoiceOptions = {
   extensionPath: string
-  /** The extension's own storage: the Kokoro runtime is fetched into it. */
+  /** The extension's own storage: Kokoro's runtime and Phonon's model are fetched into it. */
   storagePath: string
   config(): {
     enabled: boolean
@@ -92,7 +90,7 @@ export type VoiceOptions = {
   }
   /** Writes the `aiPair.voice.enabled` setting. */
   setEnabled(on: boolean): void
-  /** Writes `aiPair.voice.model`, and `aiPair.voice.voice` or `aiPair.voice.chatterboxVoice` to match. */
+  /** Writes the model, and a voice-specific setting for Kokoro or Chatterbox. */
   setVoice(model: VoiceModel, voice: string): Promise<void>
 }
 
@@ -132,7 +130,7 @@ export class VoiceEngine implements VoicePort, VoicePanelPort {
 
   status(): VoiceStatus {
     const config = this.options.config()
-    const voice = config.model === "kokoro" ? config.voice : config.chatterboxVoice ? `chatterbox: ${path.basename(config.chatterboxVoice)}` : "chatterbox"
+    const voice = config.model === "kokoro" ? config.voice : config.model === "phonon" ? "phonon" : config.chatterboxVoice ? `chatterbox: ${path.basename(config.chatterboxVoice)}` : "chatterbox"
     return { enabled: this.on, state: this.state, voice, detail: this.detail }
   }
 
@@ -171,7 +169,7 @@ export class VoiceEngine implements VoicePort, VoicePanelPort {
   }
 
   /**
-   * What the panel's voice menu offers: both engines' voices under friendly names, the
+   * What the panel's voice menu offers: the engines' voices under friendly names, the
    * programmer's own recording among Chatterbox's, and a mark on a voice whose engine
    * still has to be fetched. Only asked where the answer is cheap and sure.
    */
@@ -188,7 +186,10 @@ export class VoiceEngine implements VoicePort, VoicePanelPort {
       return fs.existsSync(file) ? { preview: file } : {}
     }
     return {
-      current: { model: config.model, voice: config.model === "kokoro" ? config.voice : config.chatterboxVoice },
+      current: { model: config.model, voice: config.model === "kokoro" ? config.voice : config.model === "chatterbox" ? config.chatterboxVoice : "" },
+      phonon: [
+        { model: "phonon", voice: "", name: "Phonon's own voice", tag: "English · 31m", ...(fs.existsSync(path.join(this.options.storagePath, "phonon", "hub", "models--gradium--phonon-31m-en")) ? {} : { download: true }), ...sample("phonon.mp3") },
+      ],
       kokoro: VOICES.map((v) => ({ model: "kokoro", voice: v.id, name: v.name, tag: v.tag, ...(kokoroFetched ? {} : { download: true }), ...sample(`${v.id}.mp3`) })),
       chatterboxNote: CHATTERBOX_MLX ? "Chatterbox · more natural, about 1.3 GB fetched once" : "Chatterbox · more natural, a few GB fetched once, best with an NVIDIA card",
       chatterbox: [
@@ -202,7 +203,7 @@ export class VoiceEngine implements VoicePort, VoicePanelPort {
 
   /** The panel menu's pick: keep it, and say hello in it so it's chosen by ear. */
   choose(model: string, voice: string): void {
-    if (model !== "kokoro" && model !== "chatterbox") return
+    if (model !== "kokoro" && model !== "chatterbox" && model !== "phonon") return
     void (async () => {
       const sameModel = model === this.model
       await this.options.setVoice(model, voice)
@@ -290,6 +291,7 @@ export class VoiceEngine implements VoicePort, VoicePanelPort {
     this.detail = undefined
     this.publish()
     if (model === "chatterbox") await this.warmChatterbox(allowSetup)
+    else if (model === "phonon") await this.warmPhonon(allowSetup)
     else await this.warmKokoro(allowSetup)
     if (seq !== this.startSeq) return
     // Chatterbox is a natural voice played back faster or slower to follow a pace, so fitting each
@@ -386,6 +388,25 @@ export class VoiceEngine implements VoicePort, VoicePanelPort {
     )
   }
 
+  /** Phonon 31m: the Apache-licensed English model, kept warm on the CPU. */
+  private async warmPhonon(allowSetup: boolean): Promise<void> {
+    const uv = which(HOST, "uv", [path.join(HOST.home, ".local", "bin"), path.join(HOST.home, ".cargo", "bin"), "/opt/homebrew/bin", "/usr/local/bin"])
+    if (!uv) throw new Error("Phonon is run by uv, which wasn't found. Install it (https://docs.astral.sh/uv/), or pick a Kokoro voice.")
+    const args = ["tool", "run", ...(allowSetup ? [] : ["--offline"]), "--python", "3.12", "--from", PHONON_PACKAGE, "python", path.join(this.options.extensionPath, "dist", "phononWorker.py")]
+    const env = { ...process.env, HF_HOME: path.join(this.options.storagePath, "phonon"), HF_HUB_CACHE: path.join(this.options.storagePath, "phonon", "hub"), AI_PAIR_PHONON_OFFLINE: allowSetup ? "0" : "1" }
+    const warm = () => this.spawnWorker(uv, args, { env, timeoutMs: allowSetup ? 300_000 : 120_000 })
+    if (!allowSetup) {
+      await warm().catch((error: unknown) => {
+        throw new Error(`Phonon couldn't start from what's already downloaded (${error instanceof Error ? error.message : String(error)}). Turn the voice off and on to fetch it.`)
+      })
+      return
+    }
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: "AI Pair: starting Phonon (the first time fetches about 64 MB of model)…" },
+      warm,
+    )
+  }
+
   /** Runs a voice worker and waits for its `ready`; its replies then settle the sentences asked of it. */
   private async spawnWorker(cmd: string, args: string[], options: { cwd?: string; env: NodeJS.ProcessEnv; timeoutMs: number }): Promise<void> {
     const child = spawn(cmd, args, { cwd: options.cwd, env: options.env, stdio: ["pipe", "pipe", "pipe"] })
@@ -458,7 +479,7 @@ export class VoiceEngine implements VoicePort, VoicePanelPort {
     const speed = Math.min(TALK_RANGE.max, Math.max(TALK_RANGE.min, this.pace() * speedScale))
     const out = this.outPath(id)
     // Chatterbox has no pace to set: it talks at its own, and its recording is played faster or slower.
-    const request = model === "chatterbox" ? { id, text, voice: chatterboxVoice, out } : { id, text, voice, speed, out }
+    const request = model === "chatterbox" ? { id, text, voice: chatterboxVoice, out } : { id, text, voice: model === "phonon" ? "" : voice, speed, out }
     if (model === "chatterbox" && speed !== 1) this.playbackRates.set(out, speed)
     return new Promise<string>((resolve, reject) => {
       this.synths.set(id, { resolve, reject })

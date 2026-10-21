@@ -27,8 +27,8 @@ export type VoiceStatus = { enabled: boolean; state: "off" | "loading" | "ready"
  *  stays out of the friendly parts; nobody picks by that. */
 export type VoiceRow = { model: string; voice: string; name: string; tag: string; download?: boolean; preview?: string }
 
-/** Everything the voice menu shows: the current pick, the two engines' voices, the second's note. */
-export type VoiceChoices = { current: { model: string; voice: string }; kokoro: VoiceRow[]; chatterbox: VoiceRow[]; chatterboxNote: string }
+/** Everything the voice menu shows: the current pick, the three engines' voices, the third's note. */
+export type VoiceChoices = { current: { model: string; voice: string }; kokoro: VoiceRow[]; phonon: VoiceRow[]; chatterbox: VoiceRow[]; chatterboxNote: string }
 
 /** What the panel asks of the voice. */
 export type VoicePanelPort = {
@@ -133,7 +133,7 @@ export class NarrationPanel implements PanelPort, KeysPort, vscode.WebviewViewPr
     if (!this.voice || !webview) return
     const choices = this.voice.choices()
     const shown = (rows: VoiceRow[]) => rows.map((r) => (r.preview ? { ...r, preview: webview.asWebviewUri(vscode.Uri.file(r.preview)).toString() } : r))
-    void webview.postMessage({ type: "voiceChoices", ...choices, kokoro: shown(choices.kokoro), chatterbox: shown(choices.chatterbox) })
+    void webview.postMessage({ type: "voiceChoices", ...choices, kokoro: shown(choices.kokoro), phonon: shown(choices.phonon), chatterbox: shown(choices.chatterbox) })
   }
 
   /** The keyboard menu's rows, as they now stand. Not logged: only now matters. */

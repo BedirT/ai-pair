@@ -97,9 +97,10 @@ the start, so you only say what the task is.
 - **Voice:** hear it instead of reading it. Turn **Voice** on in the panel and
   what the agent says is spoken as it works, on your own machine, while the
   words still land in the history. Your eyes stay on the code. **Pick a
-  voice** offers Kokoro (light, works everywhere) or Chatterbox (more
-  natural; needs uv, and an Apple Silicon GPU or an NVIDIA card to keep
-  up; a big one-time fetch).
+  voice** offers Kokoro (light, works everywhere), Phonon (tiny, English
+  only; needs uv, a small one-time fetch, then local on CPU) or Chatterbox
+  (more natural; needs uv, and an Apple Silicon GPU or an NVIDIA card to
+  keep up; a big one-time fetch).
 - **Key sounds:** the keyboard button plays the agent's keystrokes as a
   real mechanical keyboard, softly, under the voice. The arrow beside it
   picks one of six keyboards, each playing as you move to it. Click the

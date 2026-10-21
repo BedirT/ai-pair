@@ -98,7 +98,9 @@ export function activate(context: vscode.ExtensionContext): Api {
     setEnabled: (on) => void config().update("voice.enabled", on, vscode.ConfigurationTarget.Global),
     setVoice: async (model, voice) => {
       const global = vscode.ConfigurationTarget.Global
-      await config().update(model === "kokoro" ? "voice.voice" : "voice.chatterboxVoice", voice, global)
+      // Each engine remembers its own voice; Phonon has only its built-in one, so there is nothing to store for it.
+      if (model === "kokoro") await config().update("voice.voice", voice, global)
+      else if (model === "chatterbox") await config().update("voice.chatterboxVoice", voice, global)
       await config().update("voice.model", model, global)
     },
   })

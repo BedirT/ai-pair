@@ -26,9 +26,10 @@ await esbuild.build({ ...common, entryPoints: ["src/extension.ts"], external: ["
 // The voice worker runs under bun or node, as its own ES module; it loads kokoro-js from the
 // copy in the extension's own storage, so nothing of it is bundled in.
 await esbuild.build({ ...common, format: "esm", entryPoints: ["src/voiceWorker.ts"], outfile: "dist/voiceWorker.js" })
-// The Chatterbox workers are Python, run by uv beside the extension: copied as they are.
+// The Chatterbox and Phonon workers are Python, run by uv beside the extension: copied as they are.
 fs.copyFileSync("src/chatterboxWorker.py", "dist/chatterboxWorker.py")
 fs.copyFileSync("src/chatterboxTorchWorker.py", "dist/chatterboxTorchWorker.py")
+fs.copyFileSync("src/phononWorker.py", "dist/phononWorker.py")
 // The relay tells agents the extension's version.
 const { version } = JSON.parse(fs.readFileSync("package.json", "utf8"))
 await esbuild.build({

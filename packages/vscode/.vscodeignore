@@ -5,6 +5,7 @@
 !dist/ompExtension.js
 !dist/chatterboxWorker.py
 !dist/chatterboxTorchWorker.py
+!dist/phononWorker.py
 !package.json
 !README.md
 !CHANGELOG.md

@@ -191,13 +191,15 @@
   to talk like a pair at your desk, naming the code they type. The typing a
   `say` explains waits until its words are heard, so a slow-to-start voice
   never lags behind the code it is about.
-- **Two voices to choose from.** The voice picker offers Kokoro (light, works
-  everywhere) or Chatterbox (more natural; needs
+- **Three voices to choose from.** The voice picker offers Kokoro (light, works
+  everywhere), Phonon English 31m (tiny, English only, its own built-in
+  voice; needs [uv](https://docs.astral.sh/uv/), a ~64 MB fetch the first
+  time, then local on CPU, offline) or Chatterbox (more natural; needs
   [uv](https://docs.astral.sh/uv/), and an Apple Silicon GPU or an
   NVIDIA card to keep up; a big one-time fetch on the first turn-on).
+  Pick one from the arrow beside **Voice** in the Pair panel.
   Chatterbox speaks in its own voice, or in one taken from a recording
-  you pick. New settings: `aiPair.voice.model`,
-  `aiPair.voice.chatterboxVoice`.
+  you pick. New value for `aiPair.voice.model`: `phonon`.
 - **Hear the agent type.** The keyboard button in the Pair panel turns on
   typing sounds: its keystrokes play as a real mechanical keyboard, from
   recordings of a switch — a press and a release per key, letters by their

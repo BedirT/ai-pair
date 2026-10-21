@@ -1160,6 +1160,8 @@ export function panelHtml(cspSource: string): string {
   function setVoiceChoices(e) {
     const parts = [menuHead("Kokoro · light, works everywhere")];
     for (const v of e.kokoro) parts.push(menuRow(voiceRow(e, v)));
+    parts.push(menuHead("Phonon · tiny, English only"));
+    for (const v of e.phonon) parts.push(menuRow(voiceRow(e, v)));
     parts.push(menuHead(e.chatterboxNote));
     for (const v of e.chatterbox) parts.push(menuRow(voiceRow(e, v)));
     parts.push(menuRow({ data: { action: "recording" }, icon: MENU_ICONS.mic, name: "Sound like a recording…", tag: "Your own voice: 10+ seconds of one person speaking clearly" }));

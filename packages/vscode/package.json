@@ -196,9 +196,10 @@
         "aiPair.voice.model": {
           "type": "string",
           "default": "kokoro",
-          "enum": ["kokoro", "chatterbox"],
+          "enum": ["kokoro", "phonon", "chatterbox"],
           "enumDescriptions": [
             "Kokoro, a light local speech model. Works everywhere; the first turn-on downloads it into the extension's storage, about 100 MB of model in a few hundred MB of runtime.",
+            "Phonon English 31m, a tiny local speech model: English only, about 64 MB, run by uv. The first turn-on fetches it; afterwards it speaks on local CPU, offline.",
             "Chatterbox Turbo by Resemble AI: more natural, run by uv. On an Apple Silicon Mac it uses the GPU; elsewhere it wants an NVIDIA card to keep up, and the first turn-on fetches a few GB (about 1.3 GB on a Mac)."
           ],
           "markdownDescription": "Which speech model talks. The panel's Pick a voice changes it."

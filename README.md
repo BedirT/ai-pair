@@ -114,6 +114,10 @@ until you hear it. The arrow beside **Voice** chooses the model and whose voice 
   about 100 MB of model, in a few hundred MB of runtime. It needs bun or
   node on the machine, nothing else — no agent has to be installed for
   the voice to work, and it speaks the same for every agent.
+- **Phonon**, tiny and English-only. It runs through
+  [uv](https://docs.astral.sh/uv/), which must be installed, and fetches
+  about 64 MB the first time; afterwards it speaks on local CPU, offline,
+  in its own built-in voice.
 - **Chatterbox**, more natural. It runs through
   [uv](https://docs.astral.sh/uv/), which must be installed. On an Apple
   Silicon Mac it uses the GPU and fetches about 1.3 GB the first time;
@@ -228,7 +232,7 @@ code --install-extension ai-pair-*.vsix
 | `aiPair.workAheadBatches` | How many batches the agent may write ahead of what you're watching (default 2, at most 10). More means fewer pauses; less means less thrown away when you step in. `0` waits for each batch. |
 
 | `aiPair.voice.enabled` | Speak what the agent says, live, on this machine. Off by default; the panel's **Voice** button flips it. |
-| `aiPair.voice.model` | Which speech model: `kokoro` (default, works everywhere) or `chatterbox` (more natural, needs uv; an Apple Silicon GPU or an NVIDIA card to keep up). |
+| `aiPair.voice.model` | Which speech model: `kokoro` (default, works everywhere), `phonon` (tiny, English only, needs uv; local CPU after a ~64 MB first fetch) or `chatterbox` (more natural, needs uv; an Apple Silicon GPU or an NVIDIA card to keep up). |
 | `aiPair.voice.voice` | Whose Kokoro voice it is. |
 | `aiPair.voice.chatterboxVoice` | A recording for Chatterbox to sound like. Empty uses its own voice. |
 | `aiPair.voice.rate` | How fast the voice talks on top of the playback speed (1 is its own pace). |

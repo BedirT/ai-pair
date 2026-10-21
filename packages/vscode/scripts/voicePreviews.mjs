@@ -62,4 +62,7 @@ if (process.platform === "darwin" && process.arch === "arm64") {
 } else {
   console.log("chatterbox.mp3 skipped: needs an Apple Silicon Mac; the shipped sample stands.")
 }
+const phononWav = path.join(tmp, "phonon.wav")
+execFileSync("uv", ["tool", "run", "--python", "3.12", "--from", "ptts==0.4.0", "python", "-c", "import ptts,sys; ptts.TTS(lang='en', device='cpu').save(sys.argv[1], sys.argv[2])", phononWav, PHRASE], { stdio: "inherit" })
+toMp3(phononWav, "phonon.mp3")
 fs.rmSync(tmp, { recursive: true, force: true })
